@@ -148,8 +148,9 @@ async function getInvoicesForDealer(contactId) {
 
   console.log('[ZohoBooks] FETCH invoices for:', contactId);
 
-  // Fetch 'all' (sent+overdue+paid) and 'draft' in parallel — 2 calls only
-  const [allInvoices, draftInvoices] = await Promise.all([
+  // Fetch across key statuses in parallel — overdue fetched separately
+  // as Zoho 'all' filter sometimes excludes overdue with customer_id filter
+  const [allInvoices, draftInvoices, overdueInvoices] = await Promise.all([
     zbGet('/invoices', {
       customer_id: contactId,
       status: 'all',
@@ -165,18 +166,28 @@ async function getInvoicesForDealer(contactId) {
       sort_order: 'D',
       per_page: 200,
     }).then(d => d.invoices || []).catch(() => []),
+
+    zbGet('/invoices', {
+      customer_id: contactId,
+      status: 'overdue',
+      sort_column: 'date',
+      sort_order: 'D',
+      per_page: 200,
+    }).then(d => d.invoices || []).catch(() => []),
   ]);
+
+  console.log('[ZohoBooks] Raw counts — all:', allInvoices.length,
+    'draft:', draftInvoices.length, 'overdue:', overdueInvoices.length);
 
   // Merge and deduplicate
   const seen = new Set();
-  const unique = [...allInvoices, ...draftInvoices].filter(inv => {
+  const unique = [...allInvoices, ...draftInvoices, ...overdueInvoices].filter(inv => {
     if (seen.has(inv.invoice_id)) return false;
     seen.add(inv.invoice_id);
     return true;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  console.log('[ZohoBooks] Total invoices:', unique.length,
-    `(all:${allInvoices.length}, draft:${draftInvoices.length})`);
+  console.log('[ZohoBooks] Total unique invoices:', unique.length);
 
   cacheSet(key, unique, TTL.invoices);
   return unique;
