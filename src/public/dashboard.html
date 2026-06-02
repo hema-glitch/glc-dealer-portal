@@ -1260,6 +1260,17 @@ function showSection(id, el) {
   if (el) el.classList.add('active');
   document.getElementById('pageTitle').textContent = pageTitles[id] || id;
   if (id === 'orderHistory') loadOrderHistory();
+  if (id === 'orders') {
+    // Re-render products in case they loaded while section was hidden
+    if (products.length > 0) renderProducts();
+    else {
+      // Products not loaded yet — fetch them now
+      fetch('/api/products')
+        .then(r => r.json())
+        .then(d => { if (d.success) { products = d.products; renderProducts(); } })
+        .catch(() => {});
+    }
+  }
 }
 
 // ── Logout ───────────────────────────────────────────────
