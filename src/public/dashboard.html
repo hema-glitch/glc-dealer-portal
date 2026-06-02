@@ -1014,10 +1014,21 @@ function renderDashboard(data) {
     `).join('');
   }
 
-  // All invoices section
-  document.getElementById('allInvoicesBody').innerHTML = tbody.innerHTML.replace(
-    /colspan="5"/g, 'colspan="6"'
-  );
+  // All invoices section — replicate recent invoices data
+  const allTbody = document.getElementById('allInvoicesBody');
+  if (allTbody) {
+    allTbody.innerHTML = recentInvoices.length
+      ? recentInvoices.map(inv => `
+          <tr>
+            <td><strong>${inv.number}</strong></td>
+            <td>${inv.date}</td>
+            <td>${inv.dueDate || '—'}</td>
+            <td>AED ${fmt(inv.total)}</td>
+            <td style="color:${inv.balance > 0 ? 'var(--red)' : 'var(--green)'}">AED ${fmt(inv.balance)}</td>
+            <td>${statusBadge(inv.status)}</td>
+          </tr>`).join('')
+      : `<tr><td colspan="6"><div class="empty-state"><div class="icon">📄</div><p>No invoices found</p></div></td></tr>`;
+  }
 
   // Rebate
   document.getElementById('rebateCycleDates').textContent = `${rebate.cycleStart} → ${rebate.cycleEnd}`;
@@ -1275,6 +1286,52 @@ function showSection(id, el) {
 }
 
 // ── Logout ───────────────────────────────────────────────
+
+// ── Order History ────────────────────────────────────
+async function loadOrderHistory() {
+  const tbody = document.getElementById('orderHistoryBody');
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">⏳</div><p>Loading orders...</p></div></td></tr>`;
+  try {
+    const res  = await fetch('/api/orders');
+    const data = await res.json();
+    if (!data.success || !data.orders || !data.orders.length) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">📦</div><p>No orders found</p></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.orders.map(o => `
+      <tr>
+        <td><strong>${o.number || o.id}</strong></td>
+        <td>${o.date || '—'}</td>
+        <td>AED ${fmt(o.total || 0)}</td>
+        <td>${statusBadge(o.status || 'draft')}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><p>Failed to load orders</p></div></td></tr>`;
+  }
+}
+
+// ── Render My Schemes ─────────────────────────────────
+function renderMySchemes(data) {
+  if (!data || !data.schemeRules) return;
+  const rules = data.schemeRules;
+  const cdRate = document.getElementById('schemeCDRate');
+  const cdDays = document.getElementById('schemeCDDays');
+  const rebRate = document.getElementById('schemeRebateRate');
+  const rebCap = document.getElementById('schemeRebateCap');
+  const catBadge = document.getElementById('schemeCategoryBadge');
+  const cdExpl = document.getElementById('cdExplainer');
+  const rebExpl = document.getElementById('rebateExplainer');
+  if (cdRate) cdRate.textContent = rules.cashDiscountRate || '3%';
+  if (cdDays) cdDays.textContent = (rules.cashDiscountDays || 15) + ' day payment window';
+  if (rebRate) rebRate.textContent = rules.rebateRate || '3%';
+  if (rebCap) rebCap.textContent = 'Cap ' + (rules.rebateCap || 'AED 10,000');
+  if (catBadge) catBadge.textContent = rules.category || 'Standard';
+  if (cdExpl) cdExpl.innerHTML = `Pay your full invoice within <strong>${rules.cashDiscountDays || 15} days</strong> to earn <strong>${rules.cashDiscountRate || '3%'}</strong> cash discount.`;
+  if (rebExpl) rebExpl.innerHTML = `Earn <strong>${rules.rebateRate || '3%'}</strong> back on all purchases in a 90-day cycle. Max <strong>${rules.rebateCap || 'AED 10,000'}</strong> per cycle.`;
+}
+
 async function logout() {
   await fetch('/api/auth/logout', { method: 'POST' });
   window.location.href = '/login';
