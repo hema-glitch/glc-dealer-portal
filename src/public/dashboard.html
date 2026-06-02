@@ -1260,6 +1260,7 @@ function showSection(id, el) {
   if (el) el.classList.add('active');
   document.getElementById('pageTitle').textContent = pageTitles[id] || id;
   if (id === 'orderHistory') loadOrderHistory();
+  // Auto-load on tab switch
   if (id === 'orders') {
     // Re-render products in case they loaded while section was hidden
     if (products.length > 0) renderProducts();
