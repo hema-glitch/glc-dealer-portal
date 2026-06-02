@@ -591,6 +591,52 @@
       .kpi-grid { grid-template-columns: repeat(2, 1fr); }
       .grid-2, .grid-3-1 { grid-template-columns: 1fr; }
     }
+
+    /* ── INVOICE MODAL ───────────────────────────────── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 200; display: flex;
+      align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.hidden { display: none; }
+    .modal {
+      background: white; border-radius: 16px;
+      width: 100%; max-width: 680px;
+      max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.3);
+    }
+    .modal-header {
+      padding: 20px 24px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+      position: sticky; top: 0; background: white; z-index: 1;
+    }
+    .modal-title { font-family: 'Montserrat',sans-serif; font-size: 18px; font-weight: 800; }
+    .modal-close {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: none; background: var(--bg); cursor: pointer;
+      font-size: 18px; display: flex; align-items: center; justify-content: center;
+    }
+    .modal-body { padding: 24px; }
+    .inv-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .inv-meta-item { background: var(--bg); border-radius: 8px; padding: 12px; }
+    .inv-meta-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .inv-meta-value { font-weight: 600; font-size: 14px; color: var(--dark); margin-top: 2px; }
+    .inv-items { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    .inv-items th { background: var(--bg); padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); text-align: left; }
+    .inv-items td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .inv-total { text-align: right; padding: 12px; background: var(--bg); border-radius: 8px; }
+    .inv-total-label { font-size: 13px; color: var(--text-muted); }
+    .inv-total-value { font-family: 'Montserrat',sans-serif; font-size: 22px; font-weight: 800; color: var(--red); }
+    .download-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 20px; background: var(--red); color: white;
+      border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
+      cursor: pointer; font-family: 'Montserrat',sans-serif;
+      text-decoration: none;
+    }
+    .download-btn:hover { background: var(--red-dark); }
   </style>
 </head>
 <body>
@@ -1004,8 +1050,8 @@ function renderDashboard(data) {
     tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">📄</div><p>No invoices found</p></div></td></tr>`;
   } else {
     tbody.innerHTML = recentInvoices.map(inv => `
-      <tr>
-        <td><strong>${inv.number}</strong></td>
+      <tr style="cursor:pointer" onclick="openInvoice('${inv.id}')">
+        <td><strong style="color:var(--red)">${inv.number}</strong></td>
         <td>${inv.date}</td>
         <td>AED ${fmt(inv.total)}</td>
         <td style="color:${inv.balance > 0 ? 'var(--red)' : 'var(--green)'}">AED ${fmt(inv.balance)}</td>
@@ -1028,6 +1074,10 @@ function renderDashboard(data) {
             <td>${statusBadge(inv.status)}</td>
           </tr>`).join('')
       : `<tr><td colspan="6"><div class="empty-state"><div class="icon">📄</div><p>No invoices found</p></div></td></tr>`;
+  // add hover hint
+  if (allTbody && recentInvoices.length) {
+    allTbody.querySelectorAll('tr').forEach(r => { r.style.cursor = 'pointer'; });
+  }
   }
 
   // Rebate
@@ -1287,6 +1337,151 @@ function showSection(id, el) {
 
 // ── Logout ───────────────────────────────────────────────
 
+
+// ── Invoice Modal ─────────────────────────────────
+let currentInvoice = null;
+
+async function openInvoice(invoiceId) {
+  document.getElementById('invoiceModal').classList.remove('hidden');
+  document.getElementById('modalBody').innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Loading invoice...</p></div>';
+  document.getElementById('modalInvTitle').textContent = 'Loading...';
+
+  try {
+    const res  = await fetch(`/api/dashboard/invoice/${invoiceId}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    currentInvoice = data.invoice;
+    renderInvoiceModal(data.invoice);
+  } catch (err) {
+    document.getElementById('modalBody').innerHTML = `<div class="empty-state"><p>Failed to load invoice: ${err.message}</p></div>`;
+  }
+}
+
+function renderInvoiceModal(inv) {
+  document.getElementById('modalInvTitle').textContent = `Invoice ${inv.invoice_number}`;
+  const lineItems = (inv.line_items || []).map(li => `
+    <tr>
+      <td>${li.name || li.description || '—'}</td>
+      <td style="text-align:center">${li.quantity || 1}</td>
+      <td style="text-align:right">${inv.currency_code || 'AED'} ${fmt(li.rate || 0)}</td>
+      <td style="text-align:right;font-weight:600">${inv.currency_code || 'AED'} ${fmt(li.item_total || 0)}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="inv-meta">
+      <div class="inv-meta-item">
+        <div class="inv-meta-label">Invoice Number</div>
+        <div class="inv-meta-value">${inv.invoice_number}</div>
+      </div>
+      <div class="inv-meta-item">
+        <div class="inv-meta-label">Status</div>
+        <div class="inv-meta-value">${statusBadge(inv.status)}</div>
+      </div>
+      <div class="inv-meta-item">
+        <div class="inv-meta-label">Invoice Date</div>
+        <div class="inv-meta-value">${inv.date || '—'}</div>
+      </div>
+      <div class="inv-meta-item">
+        <div class="inv-meta-label">Due Date</div>
+        <div class="inv-meta-value">${inv.due_date || '—'}</div>
+      </div>
+      <div class="inv-meta-item">
+        <div class="inv-meta-label">Balance Due</div>
+        <div class="inv-meta-value" style="color:var(--red)">${inv.currency_code || 'AED'} ${fmt(inv.balance || 0)}</div>
+      </div>
+      <div class="inv-meta-item">
+        <div class="inv-meta-label">Customer</div>
+        <div class="inv-meta-value">${inv.customer_name || '—'}</div>
+      </div>
+    </div>
+
+    <table class="inv-items">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th style="text-align:center">Qty</th>
+          <th style="text-align:right">Rate</th>
+          <th style="text-align:right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>${lineItems || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">No line items</td></tr>'}</tbody>
+    </table>
+
+    <div class="inv-total">
+      <div class="inv-total-label">Total Amount</div>
+      <div class="inv-total-value">${inv.currency_code || 'AED'} ${fmt(inv.total || 0)}</div>
+    </div>
+
+    ${inv.notes ? `<div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:8px;font-size:13px;color:var(--text-muted)"><strong>Notes:</strong> ${inv.notes}</div>` : ''}
+  `;
+}
+
+function closeModal() {
+  document.getElementById('invoiceModal').classList.add('hidden');
+  currentInvoice = null;
+}
+
+function downloadInvoice() {
+  if (!currentInvoice) return;
+  // Build printable HTML and trigger browser print/save as PDF
+  const printWin = window.open('', '_blank');
+  const inv = currentInvoice;
+  const lineItems = (inv.line_items || []).map(li => `
+    <tr>
+      <td style="padding:10px;border-bottom:1px solid #eee">${li.name || li.description || '—'}</td>
+      <td style="padding:10px;border-bottom:1px solid #eee;text-align:center">${li.quantity || 1}</td>
+      <td style="padding:10px;border-bottom:1px solid #eee;text-align:right">${inv.currency_code || 'AED'} ${fmt(li.rate || 0)}</td>
+      <td style="padding:10px;border-bottom:1px solid #eee;text-align:right;font-weight:600">${inv.currency_code || 'AED'} ${fmt(li.item_total || 0)}</td>
+    </tr>
+  `).join('');
+
+  printWin.document.write(`
+    <!DOCTYPE html><html><head>
+    <title>Invoice ${inv.invoice_number}</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 40px; color: #1a1a1a; }
+      .header { display: flex; justify-content: space-between; margin-bottom: 40px; }
+      .company { font-size: 28px; font-weight: 900; color: #C8102E; }
+      .inv-title { font-size: 22px; font-weight: 700; color: #888; }
+      .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+      .meta-box { background: #f5f5f5; padding: 12px; border-radius: 6px; }
+      .meta-label { font-size: 11px; color: #888; text-transform: uppercase; }
+      .meta-value { font-weight: 600; font-size: 14px; }
+      table { width: 100%; border-collapse: collapse; }
+      th { background: #C8102E; color: white; padding: 10px; text-align: left; font-size: 12px; }
+      .total { text-align: right; margin-top: 20px; font-size: 20px; font-weight: 700; color: #C8102E; }
+      @media print { body { padding: 20px; } }
+    </style></head><body>
+    <div class="header">
+      <div><div class="company">GLC PAINTS</div><div style="color:#888;font-size:12px">Dealer Management System</div></div>
+      <div class="inv-title">TAX INVOICE</div>
+    </div>
+    <div class="meta">
+      <div class="meta-box"><div class="meta-label">Invoice Number</div><div class="meta-value">${inv.invoice_number}</div></div>
+      <div class="meta-box"><div class="meta-label">Status</div><div class="meta-value">${inv.status?.toUpperCase()}</div></div>
+      <div class="meta-box"><div class="meta-label">Invoice Date</div><div class="meta-value">${inv.date || '—'}</div></div>
+      <div class="meta-box"><div class="meta-label">Due Date</div><div class="meta-value">${inv.due_date || '—'}</div></div>
+      <div class="meta-box"><div class="meta-label">Customer</div><div class="meta-value">${inv.customer_name || '—'}</div></div>
+      <div class="meta-box"><div class="meta-label">Balance Due</div><div class="meta-value" style="color:#C8102E">${inv.currency_code || 'AED'} ${fmt(inv.balance || 0)}</div></div>
+    </div>
+    <table>
+      <thead><tr><th>Item</th><th>Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>${lineItems}</tbody>
+    </table>
+    <div class="total">Total: ${inv.currency_code || 'AED'} ${fmt(inv.total || 0)}</div>
+    ${inv.notes ? `<div style="margin-top:20px;padding:12px;background:#f5f5f5;border-radius:6px;font-size:13px"><strong>Notes:</strong> ${inv.notes}</div>` : ''}
+    <script>window.onload = () => { window.print(); }</script>
+    </body></html>
+  `);
+  printWin.document.close();
+}
+
+// Close modal on overlay click
+document.getElementById('invoiceModal')?.addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
 // ── Order History ────────────────────────────────────
 async function loadOrderHistory() {
   const tbody = document.getElementById('orderHistoryBody');
@@ -1362,5 +1557,21 @@ function showToast(msg, type = 'success') {
   setTimeout(() => { t.className = `toast ${type}`; }, 3500);
 }
 </script>
+
+<!-- ── INVOICE DETAIL MODAL ──────────────────────── -->
+<div class="modal-overlay hidden" id="invoiceModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalInvTitle">Invoice Details</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="download-btn" id="downloadBtn" onclick="downloadInvoice()">⬇ Download PDF</button>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>
+    </div>
+  </div>
+</div>
 </body>
 </html>

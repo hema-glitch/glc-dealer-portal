@@ -94,3 +94,19 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 module.exports = router;
+
+/**
+ * GET /api/dashboard/invoice/:id
+ * Returns full invoice details including line items
+ */
+router.get('/invoice/:id', authMiddleware, async (req, res) => {
+  try {
+    const { getInvoiceDetails } = require('../services/zohoBooks');
+    const invoice = await getInvoiceDetails(req.params.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    res.json({ success: true, invoice });
+  } catch (err) {
+    console.error('[Dashboard] invoice detail error:', err.message);
+    res.status(500).json({ error: 'Failed to load invoice' });
+  }
+});
