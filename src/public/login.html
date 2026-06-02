@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/png" href="/static/favicon.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GLC Paints — Dealer Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red: #C8102E;
+      --red-dark: #a00d24;
+      --red-light: #e8183f;
+      --black: #0D0D0D;
+      --dark: #1a1a1a;
+      --white: #ffffff;
+      --gray: #f5f5f5;
+      --gray-mid: #e0e0e0;
+      --text-muted: #888;
+      --gold: #C9A84C;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--black);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Background geometric pattern */
+    body::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 40px,
+          rgba(200,16,46,0.04) 40px,
+          rgba(200,16,46,0.04) 41px
+        );
+      pointer-events: none;
+    }
+
+    /* Red accent bar - left */
+    body::after {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 6px;
+      background: linear-gradient(to bottom, var(--red), var(--gold), var(--red));
+    }
+
+    .login-wrapper {
+      display: flex;
+      width: 900px;
+      max-width: 95vw;
+      min-height: 560px;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 40px 80px rgba(0,0,0,0.6);
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Left panel */
+    .brand-panel {
+      flex: 1;
+      background: linear-gradient(145deg, var(--red-dark) 0%, var(--red) 50%, #e8203d 100%);
+      padding: 60px 48px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .brand-panel::before {
+      content: '';
+      position: absolute;
+      bottom: -60px; right: -60px;
+      width: 240px; height: 240px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.06);
+    }
+
+    .brand-panel::after {
+      content: '';
+      position: absolute;
+      top: -30px; right: 40px;
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .logo-area {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .logo-text {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 48px;
+      font-weight: 800;
+      color: white;
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+
+    .logo-sub {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.7);
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+
+    .divider {
+      width: 40px;
+      height: 3px;
+      background: rgba(255,255,255,0.5);
+      margin-top: 8px;
+    }
+
+    .brand-tagline {
+      font-size: 24px;
+      font-weight: 700;
+      color: white;
+      line-height: 1.4;
+      font-family: 'Montserrat', sans-serif;
+    }
+
+    .brand-tagline span {
+      color: rgba(255,255,255,0.6);
+      font-weight: 400;
+      font-size: 14px;
+      display: block;
+      margin-top: 8px;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .feature-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: rgba(255,255,255,0.85);
+      font-size: 13px;
+    }
+
+    .feature-list li::before {
+      content: '✓';
+      width: 22px; height: 22px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    /* Right panel */
+    .form-panel {
+      flex: 0 0 400px;
+      background: var(--white);
+      padding: 60px 48px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .form-title {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--black);
+      margin-bottom: 4px;
+    }
+
+    .form-subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 36px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--dark);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 1.5px solid var(--gray-mid);
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: 'Inter', sans-serif;
+      color: var(--dark);
+      background: var(--gray);
+      transition: border-color 0.2s, background 0.2s;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--red);
+      background: white;
+    }
+
+    .login-btn {
+      width: 100%;
+      padding: 15px;
+      background: var(--red);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: 'Montserrat', sans-serif;
+      cursor: pointer;
+      margin-top: 8px;
+      letter-spacing: 0.5px;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .login-btn:hover { background: var(--red-dark); }
+    .login-btn:active { transform: scale(0.98); }
+    .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .error-msg {
+      background: #fff0f2;
+      border: 1px solid #fcc;
+      color: var(--red);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-top: 12px;
+      display: none;
+    }
+
+    .footer-text {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 32px;
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 700px) {
+      .brand-panel { display: none; }
+      .form-panel { flex: 1; padding: 40px 28px; }
+      .login-wrapper { border-radius: 0; min-height: 100vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="brand-panel">
+      <div class="logo-area">
+        <div class="logo-text">GLC</div>
+        <div class="logo-sub">Paints</div>
+        <div class="divider"></div>
+      </div>
+
+      <div class="brand-tagline">
+        Dealer Portal
+        <span>Manage your orders, track schemes & monitor your account — all in one place.</span>
+      </div>
+
+      <ul class="feature-list">
+        <li>Real-time outstanding balance from Zoho Books</li>
+        <li>FOC scheme calculator on every order</li>
+        <li>3% cash discount eligibility tracker</li>
+        <li>90-day rebate progress (up to AED 10,000)</li>
+        <li>Live product catalog with stock levels</li>
+      </ul>
+    </div>
+
+    <div class="form-panel">
+      <div class="form-title">Welcome back</div>
+      <div class="form-subtitle">Sign in to your dealer account</div>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" placeholder="dealer@company.com" autocomplete="email" required />
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required />
+        </div>
+
+        <button type="submit" class="login-btn" id="loginBtn">Sign In</button>
+        <div class="error-msg" id="errorMsg"></div>
+      </form>
+
+      <div class="footer-text">
+        GLC Paints UAE &mdash; Dealer Management System<br/>
+        <a href="mailto:support@glcpaints.com" style="color:#C8102E;">support@glcpaints.com</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('loginBtn');
+      const errorMsg = document.getElementById('errorMsg');
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading-spinner"></span>Signing in...';
+      errorMsg.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          window.location.href = data.redirect || '/dashboard';
+        } else {
+          errorMsg.textContent = data.error || 'Login failed. Please try again.';
+          errorMsg.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Sign In';
+        }
+      } catch {
+        errorMsg.textContent = 'Connection error. Please try again.';
+        errorMsg.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>
