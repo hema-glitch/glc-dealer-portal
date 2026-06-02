@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/static/favicon.png" />
+  <title>GLC Paints — Admin Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --red: #C8102E; --red-dark: #a00d24; --red-light: #fef0f2;
+      --black: #0D0D0D; --dark: #1a1a1a; --sidebar-bg: #111111;
+      --white: #ffffff; --bg: #f4f4f6; --card: #ffffff;
+      --border: #e8e8ee; --text: #1a1a1a; --text-muted: #888;
+      --gold: #C9A84C; --gold-light: #fdf6e7;
+      --green: #16a34a; --green-light: #f0fdf4;
+      --blue: #2563eb; --blue-light: #eff6ff;
+      --sidebar-w: 240px;
+    }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+
+    /* SIDEBAR */
+    .sidebar { width: var(--sidebar-w); background: var(--sidebar-bg); height: 100vh; position: fixed; left: 0; top: 0; display: flex; flex-direction: column; z-index: 100; }
+    .sidebar-logo { padding: 28px 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .logo-glc { font-family: 'Montserrat',sans-serif; font-size: 32px; font-weight: 800; color: white; letter-spacing: -1px; }
+    .logo-glc span { color: var(--red); }
+    .logo-sub { font-size: 10px; color: rgba(255,255,255,0.4); letter-spacing: 3px; text-transform: uppercase; margin-top: 2px; }
+    .admin-badge { margin: 12px 16px 0; padding: 10px 14px; background: rgba(200,16,46,0.15); border: 1px solid rgba(200,16,46,0.3); border-radius: 8px; }
+    .admin-badge-name { font-size: 12px; font-weight: 600; color: white; }
+    .admin-badge-role { font-size: 10px; color: var(--red); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+    .nav { flex: 1; padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; }
+    .nav-section { font-size: 10px; color: rgba(255,255,255,0.25); text-transform: uppercase; letter-spacing: 1.5px; padding: 10px 12px 4px; font-weight: 600; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; color: rgba(255,255,255,0.55); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; border: none; background: none; width: 100%; text-align: left; }
+    .nav-item:hover { background: rgba(255,255,255,0.06); color: white; }
+    .nav-item.active { background: var(--red); color: white; }
+    .nav-item .icon { font-size: 15px; width: 20px; text-align: center; }
+    .sidebar-bottom { padding: 16px; border-top: 1px solid rgba(255,255,255,0.07); }
+    .logout-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; background: none; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: rgba(255,255,255,0.4); font-size: 13px; cursor: pointer; transition: all 0.15s; font-family: 'Inter',sans-serif; }
+    .logout-btn:hover { border-color: var(--red); color: var(--red); }
+
+    /* MAIN */
+    .main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; }
+    .topbar { background: white; border-bottom: 1px solid var(--border); padding: 0 32px; height: 64px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+    .page-title { font-family: 'Montserrat',sans-serif; font-size: 20px; font-weight: 700; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .sync-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .refresh-btn { padding: 8px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Inter',sans-serif; transition: all 0.15s; }
+    .refresh-btn:hover { border-color: var(--red); color: var(--red); }
+    .content { padding: 28px 32px; flex: 1; }
+
+    /* SECTIONS */
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* KPI GRID */
+    .kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 24px; }
+    .kpi-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; }
+    .kpi-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+    .kpi-card.red::before { background: var(--red); }
+    .kpi-card.gold::before { background: var(--gold); }
+    .kpi-card.green::before { background: var(--green); }
+    .kpi-card.blue::before { background: var(--blue); }
+    .kpi-icon { font-size: 20px; margin-bottom: 10px; }
+    .kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 600; margin-bottom: 6px; }
+    .kpi-value { font-family: 'Montserrat',sans-serif; font-size: 24px; font-weight: 800; color: var(--dark); }
+    .kpi-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    /* CARD */
+    .card { background: white; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 20px; }
+    .card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .card-title { font-family: 'Montserrat',sans-serif; font-size: 14px; font-weight: 700; }
+
+    /* TABLE */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th { padding: 10px 20px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); font-weight: 600; text-align: left; background: #fafafa; border-bottom: 1px solid var(--border); }
+    .data-table td { padding: 13px 20px; font-size: 13px; border-bottom: 1px solid var(--border); }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tbody tr:hover { background: #fafafa; cursor: pointer; }
+
+    /* BADGES */
+    .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-green { background: var(--green-light); color: var(--green); }
+    .badge-red { background: var(--red-light); color: var(--red); }
+    .badge-gold { background: var(--gold-light); color: #9a6f1e; }
+    .badge-blue { background: var(--blue-light); color: var(--blue); }
+    .badge-gray { background: #f0f0f0; color: #666; }
+
+    /* SEARCH */
+    .search-box { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: 'Inter',sans-serif; outline: none; width: 260px; }
+    .search-box:focus { border-color: var(--red); }
+
+    /* DEALER DETAIL PANEL */
+    .dealer-detail { display: none; }
+    .dealer-detail.open { display: block; }
+    .back-btn { display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 20px; font-family: 'Inter',sans-serif; }
+    .back-btn:hover { border-color: var(--red); color: var(--red); }
+
+    /* REBATE / DISCOUNT CARD */
+    .progress-track { background: var(--border); border-radius: 99px; height: 8px; overflow: hidden; margin: 8px 0 4px; }
+    .progress-fill { height: 100%; border-radius: 99px; transition: width 1s ease; }
+    .progress-fill.gold { background: linear-gradient(90deg, var(--gold), #e5c060); }
+    .progress-fill.green { background: linear-gradient(90deg, var(--green), #22c55e); }
+
+    /* LOADING */
+    #loadingOverlay { position:fixed; inset:0; background:rgba(255,255,255,0.85); display:flex; align-items:center; justify-content:center; z-index:999; transition:opacity 0.3s; }
+    .spinner { width:40px; height:40px; border:4px solid var(--border); border-top-color:var(--red); border-radius:50%; animation:spin 0.8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .empty-state { text-align:center; padding:40px; color:var(--text-muted); }
+    .empty-state .icon { font-size:36px; margin-bottom:10px; }
+
+    /* SCHEME INFO BOX */
+    .scheme-box { background: var(--bg); border-radius: 10px; padding: 16px; margin-bottom: 12px; border-left: 4px solid var(--red); }
+    .scheme-box.gold { border-left-color: var(--gold); }
+    .scheme-box.green { border-left-color: var(--green); }
+    .scheme-title { font-weight: 700; font-size: 13px; color: var(--dark); margin-bottom: 4px; }
+    .scheme-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+    .stat-mini { background: var(--bg); border-radius: 8px; padding: 12px; text-align: center; }
+    .stat-mini-val { font-family:'Montserrat',sans-serif; font-size:18px; font-weight:800; color:var(--dark); }
+    .stat-mini-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
+  </style>
+</head>
+<body>
+
+<div id="loadingOverlay"><div style="text-align:center"><div class="spinner"></div><div style="margin-top:12px;font-size:12px;color:#888;font-family:'Montserrat',sans-serif;font-weight:600">Loading admin data...</div></div></div>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-glc">GL<span>C</span></div>
+    <div class="logo-sub">Admin Portal</div>
+  </div>
+  <div class="admin-badge">
+    <div class="admin-badge-name">GLC Admin</div>
+    <div class="admin-badge-role">⚙ Super Admin</div>
+  </div>
+  <nav class="nav">
+    <div class="nav-section">Management</div>
+    <button class="nav-item active" onclick="showSection('overview',this)"><span class="icon">📊</span> Overview</button>
+    <button class="nav-item" onclick="showSection('dealers',this)"><span class="icon">👥</span> All Dealers</button>
+    <div class="nav-section">Schemes</div>
+    <button class="nav-item" onclick="showSection('cashDiscount',this)"><span class="icon">💸</span> Cash Discount</button>
+    <button class="nav-item" onclick="showSection('rebate',this)"><span class="icon">🏆</span> Rebate Tracker</button>
+    <div class="nav-section">System</div>
+    <button class="nav-item" onclick="window.location.href='/dashboard'"><span class="icon">↩</span> Dealer View</button>
+  </nav>
+  <div class="sidebar-bottom">
+    <button class="logout-btn" onclick="logout()">⬅ Sign Out</button>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <header class="topbar">
+    <div class="page-title" id="pageTitle">Admin Overview</div>
+    <div class="topbar-right">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)">
+        <div class="sync-dot"></div>Live — Zoho Books
+      </div>
+      <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+    </div>
+  </header>
+
+  <div class="content">
+
+    <!-- OVERVIEW -->
+    <section class="section active" id="section-overview">
+      <div class="kpi-grid">
+        <div class="kpi-card red">
+          <div class="kpi-icon">👥</div>
+          <div class="kpi-label">Total Dealers</div>
+          <div class="kpi-value" id="kpiDealers">—</div>
+          <div class="kpi-sub">Active contacts</div>
+        </div>
+        <div class="kpi-card gold">
+          <div class="kpi-icon">💰</div>
+          <div class="kpi-label">Total Outstanding</div>
+          <div class="kpi-value" id="kpiOutstanding">—</div>
+          <div class="kpi-sub">Across all dealers</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-icon">✅</div>
+          <div class="kpi-label">Portal Active</div>
+          <div class="kpi-value" id="kpiPortalActive">—</div>
+          <div class="kpi-sub">Dealers with login</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-icon">⭐</div>
+          <div class="kpi-label">Premium Dealers</div>
+          <div class="kpi-value" id="kpiPremium">—</div>
+          <div class="kpi-sub">Enhanced schemes</div>
+        </div>
+      </div>
+
+      <!-- Scheme Rules -->
+      <div class="grid-2" style="margin-bottom:20px">
+        <div>
+          <div class="card-title" style="margin-bottom:12px;font-family:'Montserrat',sans-serif;font-weight:700">How Schemes Work</div>
+          <div class="scheme-box">
+            <div class="scheme-title">💸 Cash Discount — 3%</div>
+            <div class="scheme-desc">
+              Dealers earn 3% discount when they pay the full invoice amount within 15 days of invoice date.<br><br>
+              <strong>Standard:</strong> 15 days window | 3%<br>
+              <strong>Premium:</strong> 20 days window | 3%<br><br>
+              <strong>How credit works:</strong> When a dealer qualifies, your team creates a <strong>Credit Note</strong> in Zoho Books for 3% of the invoice amount. This credit is applied against their next invoice automatically.
+            </div>
+          </div>
+          <div class="scheme-box gold">
+            <div class="scheme-title">🏆 Quarterly Rebate — 3% / 4%</div>
+            <div class="scheme-desc">
+              Calculated on total purchases in a 90-day cycle (quarterly).<br><br>
+              <strong>Standard:</strong> 3% rebate | AED 10,000 cap<br>
+              <strong>Premium:</strong> 4% rebate | AED 15,000 cap<br><br>
+              <strong>How credit works:</strong> At cycle end, review the Rebate Tracker below → create a <strong>Credit Note</strong> in Zoho Books for the earned amount → apply to next invoice or pay directly.
+            </div>
+          </div>
+          <div class="scheme-box green">
+            <div class="scheme-title">🎁 FOC (Free of Cost)</div>
+            <div class="scheme-desc">
+              Buy X get Y free — configured per product in <code>schemeEngine.js</code>.<br>
+              Example: Buy 10 units → get 2 free.<br><br>
+              <strong>How it works:</strong> When a dealer places an order with eligible products, FOC units are added as zero-rate line items in the Zoho Books Sales Order automatically.
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Dealers by Outstanding Balance</div></div>
+            <table class="data-table">
+              <thead><tr><th>Dealer</th><th>Category</th><th>Outstanding</th></tr></thead>
+              <tbody id="overviewDealerTable"><tr><td colspan="3"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ALL DEALERS -->
+    <section class="section" id="section-dealers">
+      <div id="dealerListView">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <input type="text" class="search-box" placeholder="🔍 Search dealers..." id="dealerSearch" oninput="filterDealers()" />
+          <div style="font-size:13px;color:var(--text-muted)" id="dealerCount">Loading...</div>
+        </div>
+        <div class="card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Dealer Name</th>
+                <th>Email</th>
+                <th>Category</th>
+                <th>Portal</th>
+                <th>Outstanding</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="dealerTableBody">
+              <tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div><p>Loading dealers...</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- DEALER DETAIL -->
+      <div id="dealerDetailView" class="dealer-detail">
+        <button class="back-btn" onclick="backToList()">← Back to Dealers</button>
+        <div id="dealerDetailContent"><div class="empty-state"><div class="icon">⏳</div><p>Loading dealer data...</p></div></div>
+      </div>
+    </section>
+
+    <!-- CASH DISCOUNT TRACKER -->
+    <section class="section" id="section-cashDiscount">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Cash Discount Eligibility — All Dealers</div>
+          <div style="font-size:12px;color:var(--text-muted)">3% if paid within 15 days (Standard) / 20 days (Premium)</div>
+        </div>
+        <div style="padding:20px">
+          <div style="background:var(--blue-light);border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;color:var(--blue)">
+            <strong>ℹ How to apply credit:</strong> When a dealer qualifies → Zoho Books → Sales → Credit Notes → New → Select dealer → Amount = 3% of invoice total → Apply to next invoice.
+          </div>
+          <table class="data-table">
+            <thead><tr><th>Dealer</th><th>Category</th><th>Eligible Invoices</th><th>Discount Earned</th><th>Action</th></tr></thead>
+            <tbody id="cdTableBody"><tr><td colspan="5"><div class="empty-state"><div class="icon">⏳</div><p>Select dealers to calculate...</p></div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- REBATE TRACKER -->
+    <section class="section" id="section-rebate">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">90-Day Rebate Tracker — All Dealers</div>
+          <div style="font-size:12px;color:var(--text-muted)">Standard: 3% cap AED 10K | Premium: 4% cap AED 15K</div>
+        </div>
+        <div style="padding:20px">
+          <div style="background:var(--gold-light);border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;color:#9a6f1e">
+            <strong>ℹ How to apply rebate:</strong> At cycle end → Zoho Books → Credit Notes → New → Select dealer → Amount = rebate earned → Apply against next invoice or record as payment.
+          </div>
+          <table class="data-table">
+            <thead><tr><th>Dealer</th><th>Category</th><th>Purchases</th><th>Rebate Earned</th><th>Progress</th><th>Days Left</th></tr></thead>
+            <tbody id="rebateTableBody"><tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div><p>Loading rebate data...</p></div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────
+let allDealers = [];
+let dealerCache = {};
+
+// ── Init ──────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => loadAll());
+
+async function loadAll() {
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  try {
+    const res  = await fetch('/api/admin/dealers');
+    if (res.status === 403) { window.location.href = '/dashboard'; return; }
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const data = await res.json();
+    if (data.success) {
+      allDealers = data.dealers;
+      renderOverview();
+      renderDealerTable(allDealers);
+    }
+  } catch (err) {
+    console.error('Failed to load admin data:', err);
+  } finally {
+    document.getElementById('loadingOverlay').style.opacity = '0';
+    setTimeout(() => document.getElementById('loadingOverlay').style.display = 'none', 300);
+  }
+}
+
+// ── Overview ──────────────────────────────────────────
+function renderOverview() {
+  const total      = allDealers.length;
+  const outstanding = allDealers.reduce((s,d) => s + d.outstanding, 0);
+  const withPortal = allDealers.filter(d => d.hasPortal).length;
+  const premium    = allDealers.filter(d => d.category === 'Premium').length;
+
+  document.getElementById('kpiDealers').textContent    = total;
+  document.getElementById('kpiOutstanding').textContent = 'AED ' + fmt(outstanding);
+  document.getElementById('kpiPortalActive').textContent = withPortal;
+  document.getElementById('kpiPremium').textContent    = premium;
+
+  // Top dealers by outstanding
+  const sorted = [...allDealers].sort((a,b) => b.outstanding - a.outstanding).slice(0,8);
+  document.getElementById('overviewDealerTable').innerHTML = sorted.length
+    ? sorted.map(d => `
+        <tr onclick="viewDealer('${d.id}')" style="cursor:pointer">
+          <td><strong>${d.name}</strong></td>
+          <td>${categoryBadge(d.category)}</td>
+          <td style="color:${d.outstanding>0?'var(--red)':'var(--green)'}">AED ${fmt(d.outstanding)}</td>
+        </tr>`).join('')
+    : `<tr><td colspan="3"><div class="empty-state"><p>No dealers found</p></div></td></tr>`;
+}
+
+// ── Dealers List ──────────────────────────────────────
+function renderDealerTable(dealers) {
+  document.getElementById('dealerCount').textContent = `${dealers.length} dealers`;
+  const tbody = document.getElementById('dealerTableBody');
+  if (!dealers.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">👥</div><p>No dealers found</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = dealers.map(d => `
+    <tr onclick="viewDealer('${d.id}')">
+      <td><strong>${d.name}</strong></td>
+      <td style="color:var(--text-muted);font-size:12px">${d.email}</td>
+      <td>${categoryBadge(d.category)}</td>
+      <td>${d.hasPortal ? '<span class="badge badge-green">✓ Active</span>' : '<span class="badge badge-gray">No access</span>'}</td>
+      <td style="color:${d.outstanding>0?'var(--red)':'var(--green)'}"><strong>AED ${fmt(d.outstanding)}</strong></td>
+      <td><button onclick="event.stopPropagation();viewDealer('${d.id}')" style="padding:5px 12px;background:var(--red);color:white;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600">View →</button></td>
+    </tr>`).join('');
+}
+
+function filterDealers() {
+  const q = document.getElementById('dealerSearch').value.toLowerCase();
+  renderDealerTable(allDealers.filter(d =>
+    d.name.toLowerCase().includes(q) || d.email.toLowerCase().includes(q)
+  ));
+}
+
+// ── Dealer Detail ─────────────────────────────────────
+async function viewDealer(dealerId) {
+  document.getElementById('dealerListView').style.display = 'none';
+  document.getElementById('dealerDetailView').classList.add('open');
+  document.getElementById('dealerDetailContent').innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Loading dealer data...</p></div>';
+
+  // Check cache
+  if (dealerCache[dealerId]) {
+    renderDealerDetail(dealerCache[dealerId]);
+    return;
+  }
+
+  try {
+    const res  = await fetch(`/api/admin/dealer/${dealerId}`);
+    const data = await res.json();
+    if (data.success) {
+      dealerCache[dealerId] = data;
+      renderDealerDetail(data);
+    } else {
+      document.getElementById('dealerDetailContent').innerHTML = `<div class="empty-state"><p>Error: ${data.error}</p></div>`;
+    }
+  } catch (err) {
+    document.getElementById('dealerDetailContent').innerHTML = `<div class="empty-state"><p>Failed to load dealer data</p></div>`;
+  }
+}
+
+function renderDealerDetail(data) {
+  const { dealer, outstanding, invoices, cashDiscount, rebate, summary } = data;
+  const el = document.getElementById('dealerDetailContent');
+
+  el.innerHTML = `
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+      <div style="width:48px;height:48px;background:var(--red);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;color:white;font-weight:800">
+        ${dealer.name.charAt(0)}
+      </div>
+      <div>
+        <div style="font-family:'Montserrat',sans-serif;font-size:20px;font-weight:800">${dealer.name}</div>
+        <div style="font-size:13px;color:var(--text-muted)">${dealer.email || '—'} &nbsp;|&nbsp; ${categoryBadge(dealer.category)}</div>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="grid-3" style="margin-bottom:20px">
+      <div class="stat-mini">
+        <div class="stat-mini-val" style="color:var(--red)">AED ${fmt(outstanding.outstanding)}</div>
+        <div class="stat-mini-label">Outstanding</div>
+      </div>
+      <div class="stat-mini">
+        <div class="stat-mini-val">${summary.totalInvoices}</div>
+        <div class="stat-mini-label">Total Invoices</div>
+      </div>
+      <div class="stat-mini">
+        <div class="stat-mini-val" style="color:${summary.totalOverdue>0?'var(--red)':'var(--green)'}">${summary.totalOverdue}</div>
+        <div class="stat-mini-label">Overdue</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Cash Discount -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">💸 Cash Discount Status</div></div>
+        <div style="padding:16px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+            <div>
+              <div style="font-size:12px;color:var(--text-muted)">Discount Earned</div>
+              <div style="font-family:'Montserrat',sans-serif;font-size:22px;font-weight:800;color:var(--green)">AED ${fmt(cashDiscount.totalDiscount)}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:12px;color:var(--text-muted)">Eligible Invoices</div>
+              <div style="font-size:22px;font-weight:800">${cashDiscount.eligibleCount} / ${cashDiscount.totalProcessed}</div>
+            </div>
+          </div>
+          ${cashDiscount.totalDiscount > 0 ? `
+            <div style="background:var(--green-light);border-radius:8px;padding:10px;font-size:12px;color:var(--green)">
+              <strong>Action needed:</strong> Create Credit Note in Zoho Books for AED ${fmt(cashDiscount.totalDiscount)}
+            </div>` : `<div style="font-size:12px;color:var(--text-muted)">No eligible invoices yet.</div>`}
+        </div>
+      </div>
+
+      <!-- Rebate -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">🏆 Rebate Progress</div></div>
+        <div style="padding:16px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <div>
+              <div style="font-size:12px;color:var(--text-muted)">${rebate.cycleStart} → ${rebate.cycleEnd}</div>
+              <div style="font-family:'Montserrat',sans-serif;font-size:22px;font-weight:800;color:var(--gold)">AED ${fmt(rebate.rebateEarned)}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:12px;color:var(--text-muted)">Days Left</div>
+              <div style="font-size:22px;font-weight:800">${rebate.daysLeft}</div>
+            </div>
+          </div>
+          <div class="progress-track"><div class="progress-fill gold" style="width:${rebate.progress}%"></div></div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted)">
+            <span>${rebate.progress}% of cap</span><span>Cap: AED ${fmt(rebate.maxRebate)}</span>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">
+            Total purchases: <strong>AED ${fmt(rebate.totalPurchases)}</strong> | Rate: <strong>${rebate.rebateRate}%</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Invoices -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">Recent Invoices</div></div>
+      <table class="data-table">
+        <thead><tr><th>Invoice #</th><th>Date</th><th>Due Date</th><th>Amount</th><th>Balance</th><th>Status</th></tr></thead>
+        <tbody>
+          ${invoices.length
+            ? invoices.map(inv => `
+                <tr>
+                  <td><strong>${inv.number}</strong></td>
+                  <td>${inv.date}</td>
+                  <td>${inv.dueDate || '—'}</td>
+                  <td>AED ${fmt(inv.total)}</td>
+                  <td style="color:${inv.balance>0?'var(--red)':'var(--green)'}">AED ${fmt(inv.balance)}</td>
+                  <td>${statusBadge(inv.status)}</td>
+                </tr>`).join('')
+            : `<tr><td colspan="6"><div class="empty-state"><p>No invoices found</p></div></td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function backToList() {
+  document.getElementById('dealerListView').style.display = 'block';
+  document.getElementById('dealerDetailView').classList.remove('open');
+}
+
+// ── Cash Discount Section ─────────────────────────────
+async function loadCashDiscountReport() {
+  const tbody = document.getElementById('cdTableBody');
+  tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">⏳</div><p>Calculating for all dealers... this may take a moment</p></div></td></tr>`;
+
+  const results = [];
+  for (const dealer of allDealers.slice(0, 10)) { // limit to first 10 for performance
+    try {
+      const cached = dealerCache[dealer.id];
+      if (cached) {
+        results.push({ dealer, cd: cached.cashDiscount });
+      } else {
+        const res  = await fetch(`/api/admin/dealer/${dealer.id}`);
+        const data = await res.json();
+        if (data.success) {
+          dealerCache[dealer.id] = data;
+          results.push({ dealer, cd: data.cashDiscount });
+        }
+      }
+    } catch {}
+  }
+
+  results.sort((a,b) => b.cd.totalDiscount - a.cd.totalDiscount);
+  tbody.innerHTML = results.map(r => `
+    <tr onclick="viewDealer('${r.dealer.id}');showSection('dealers',null)" style="cursor:pointer">
+      <td><strong>${r.dealer.name}</strong></td>
+      <td>${categoryBadge(r.dealer.category)}</td>
+      <td>${r.cd.eligibleCount} eligible</td>
+      <td style="color:${r.cd.totalDiscount>0?'var(--green)':'var(--text-muted)'}"><strong>AED ${fmt(r.cd.totalDiscount)}</strong></td>
+      <td>${r.cd.totalDiscount>0?'<span class="badge badge-green">Credit Note Needed</span>':'<span class="badge badge-gray">None</span>'}</td>
+    </tr>`).join('') || `<tr><td colspan="5"><div class="empty-state"><p>No data</p></div></td></tr>`;
+}
+
+// ── Rebate Section ────────────────────────────────────
+async function loadRebateReport() {
+  const tbody = document.getElementById('rebateTableBody');
+  tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div><p>Calculating rebates...</p></div></td></tr>`;
+
+  const results = [];
+  for (const dealer of allDealers.slice(0, 10)) {
+    try {
+      const cached = dealerCache[dealer.id];
+      if (cached) {
+        results.push({ dealer, rebate: cached.rebate });
+      } else {
+        const res  = await fetch(`/api/admin/dealer/${dealer.id}`);
+        const data = await res.json();
+        if (data.success) {
+          dealerCache[dealer.id] = data;
+          results.push({ dealer, rebate: data.rebate });
+        }
+      }
+    } catch {}
+  }
+
+  results.sort((a,b) => b.rebate.rebateEarned - a.rebate.rebateEarned);
+  tbody.innerHTML = results.map(r => `
+    <tr onclick="viewDealer('${r.dealer.id}');showSection('dealers',null)" style="cursor:pointer">
+      <td><strong>${r.dealer.name}</strong></td>
+      <td>${categoryBadge(r.dealer.category)}</td>
+      <td>AED ${fmt(r.rebate.totalPurchases)}</td>
+      <td style="color:${r.rebate.rebateEarned>0?'var(--gold)':'var(--text-muted)'}"><strong>AED ${fmt(r.rebate.rebateEarned)}</strong></td>
+      <td style="width:120px">
+        <div class="progress-track"><div class="progress-fill gold" style="width:${r.rebate.progress}%"></div></div>
+        <div style="font-size:10px;color:var(--text-muted)">${r.rebate.progress}%</div>
+      </td>
+      <td>${r.rebate.daysLeft}d</td>
+    </tr>`).join('') || `<tr><td colspan="6"><div class="empty-state"><p>No data</p></div></td></tr>`;
+}
+
+// ── Navigation ────────────────────────────────────────
+const pageTitles = {
+  overview: 'Admin Overview', dealers: 'All Dealers',
+  cashDiscount: 'Cash Discount Tracker', rebate: 'Rebate Tracker',
+};
+
+function showSection(id, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`section-${id}`).classList.add('active');
+  if (el) el.classList.add('active');
+  document.getElementById('pageTitle').textContent = pageTitles[id] || id;
+  if (id === 'cashDiscount' && allDealers.length) loadCashDiscountReport();
+  if (id === 'rebate' && allDealers.length) loadRebateReport();
+  if (id === 'dealers') {
+    document.getElementById('dealerListView').style.display = 'block';
+    document.getElementById('dealerDetailView').classList.remove('open');
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────
+function fmt(n) {
+  return Number(n||0).toLocaleString('en-AE',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function categoryBadge(cat) {
+  return cat === 'Premium'
+    ? '<span class="badge badge-gold">⭐ Premium</span>'
+    : '<span class="badge badge-blue">Standard</span>';
+}
+
+function statusBadge(status) {
+  const map = {
+    paid:['badge-green','Paid'], sent:['badge-gold','Unpaid'],
+    draft:['badge-gray','Draft'], partial:['badge-red','Partial'],
+    overdue:['badge-red','Overdue'], void:['badge-gray','Void'],
+    partially_paid:['badge-red','Partial'],
+  };
+  const [cls,label] = map[status] || ['badge-gray', status];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+</script>
+</body>
+</html>

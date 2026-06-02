@@ -17,10 +17,11 @@ app.use('/static', express.static(path.join(__dirname, 'src/public')));
 app.get('/',          (req, res) => res.redirect('/login'));
 app.get('/login',     (req, res) => res.sendFile(path.join(__dirname, 'src/public/login.html')));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'src/public/dashboard.html')));
-app.get('/admin',     (req, res) => res.sendFile(path.join(__dirname, 'src/public/dashboard.html')));
+app.get('/admin',     (req, res) => res.sendFile(path.join(__dirname, 'src/public/admin.html')));
 
 // ── API ───────────────────────────────────────────────────
 app.use('/api/auth',      require('./src/routes/auth'));
+app.use('/api/admin',     require('./src/routes/admin'));
 app.use('/api/dashboard', require('./src/routes/dashboard'));
 app.use('/api/products',  require('./src/routes/products'));
 app.use('/api/orders',    require('./src/routes/orders'));

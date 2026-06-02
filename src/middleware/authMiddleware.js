@@ -1,12 +1,9 @@
 /**
- * authMiddleware.js
- * Verifies the JWT token sent by the dealer browser (cookie or Authorization header).
+ * authMiddleware.js — JWT verification for dealer and admin routes
  */
-
 const jwt = require('jsonwebtoken');
 
 function authMiddleware(req, res, next) {
-  // Check cookie first, then Authorization header
   const token =
     req.cookies?.glc_token ||
     (req.headers.authorization?.startsWith('Bearer ')
@@ -14,30 +11,21 @@ function authMiddleware(req, res, next) {
       : null);
 
   if (!token) {
-    // API request — return 401
-    if (req.path.startsWith('/api/')) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-    // Page request — redirect to login
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Not authenticated' });
     return res.redirect('/login');
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.dealer = decoded; // { contactId, email, name, category }
+    req.dealer = decoded;
     next();
-  } catch (err) {
-    if (req.path.startsWith('/api/')) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
-    }
+  } catch {
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Invalid or expired token' });
     res.clearCookie('glc_token');
     return res.redirect('/login');
   }
 }
 
-/**
- * Admin-only middleware — checks if the logged-in user is an admin.
- */
 function adminMiddleware(req, res, next) {
   if (!req.dealer?.isAdmin) {
     return res.status(403).json({ error: 'Admin access required' });

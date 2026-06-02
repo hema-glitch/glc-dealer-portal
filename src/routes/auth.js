@@ -61,7 +61,7 @@ router.post('/login', async (req, res) => {
       return res.json({
         success: true,
         user: { name: 'GLC Admin', email, isAdmin: true },
-        redirect: '/dashboard',
+        redirect: '/admin',
       });
     }
 

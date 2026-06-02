@@ -146,48 +146,37 @@ async function getInvoicesForDealer(contactId) {
   const hit = cacheGet(key);
   if (hit) return hit;
 
-  console.log('[ZohoBooks] FETCH invoices for:', contactId);
+  console.log('[ZohoBooks] FETCH all invoices for:', contactId);
 
-  // Fetch across key statuses in parallel — overdue fetched separately
-  // as Zoho 'all' filter sometimes excludes overdue with customer_id filter
-  const [allInvoices, draftInvoices, overdueInvoices] = await Promise.all([
-    zbGet('/invoices', {
-      customer_id: contactId,
-      status: 'all',
-      sort_column: 'date',
-      sort_order: 'D',
-      per_page: 200,
-    }).then(d => d.invoices || []).catch(() => []),
+  // Fetch each status separately — Zoho ignores some statuses with customer_id+status=all
+  const statuses = ['sent', 'draft', 'overdue', 'paid', 'partially_paid', 'void'];
+  const results = await Promise.all(
+    statuses.map(status =>
+      zbGet('/invoices', {
+        customer_id: contactId,
+        status,
+        sort_column: 'date',
+        sort_order: 'D',
+        per_page: 200,
+      }).then(d => {
+        console.log(`[ZohoBooks] ${status}: ${(d.invoices||[]).length} invoices`);
+        return d.invoices || [];
+      }).catch(e => {
+        console.error(`[ZohoBooks] ${status} fetch failed:`, e.message);
+        return [];
+      })
+    )
+  );
 
-    zbGet('/invoices', {
-      customer_id: contactId,
-      status: 'draft',
-      sort_column: 'date',
-      sort_order: 'D',
-      per_page: 200,
-    }).then(d => d.invoices || []).catch(() => []),
-
-    zbGet('/invoices', {
-      customer_id: contactId,
-      status: 'overdue',
-      sort_column: 'date',
-      sort_order: 'D',
-      per_page: 200,
-    }).then(d => d.invoices || []).catch(() => []),
-  ]);
-
-  console.log('[ZohoBooks] Raw counts — all:', allInvoices.length,
-    'draft:', draftInvoices.length, 'overdue:', overdueInvoices.length);
-
-  // Merge and deduplicate
   const seen = new Set();
-  const unique = [...allInvoices, ...draftInvoices, ...overdueInvoices].filter(inv => {
+  const unique = results.flat().filter(inv => {
     if (seen.has(inv.invoice_id)) return false;
     seen.add(inv.invoice_id);
     return true;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  console.log('[ZohoBooks] Total unique invoices:', unique.length);
+  console.log('[ZohoBooks] Total unique invoices:', unique.length,
+    '| statuses:', statuses.map((s,i) => `${s}:${results[i].length}`).join(' '));
 
   cacheSet(key, unique, TTL.invoices);
   return unique;
