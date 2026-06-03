@@ -45,6 +45,35 @@ app.get('/health', (req, res) => res.json({
   timestamp: new Date().toISOString(),
 }));
 
+// ── Auth diagnostic (remove after debugging) ─────────────────
+app.get('/health/auth', async (req, res) => {
+  const mask = (v) => v ? v.slice(0,6) + '...' + v.slice(-4) : '❌ NOT SET';
+  const result = {
+    env: {
+      ZOHO_CLIENT_ID:     mask(process.env.ZOHO_CLIENT_ID),
+      ZOHO_CLIENT_SECRET: mask(process.env.ZOHO_CLIENT_SECRET),
+      ZOHO_REFRESH_TOKEN: mask(process.env.ZOHO_REFRESH_TOKEN),
+      ZOHO_ORG_ID:        process.env.ZOHO_ORG_ID     || '❌ NOT SET',
+      ZOHO_ACCOUNTS_URL:  process.env.ZOHO_ACCOUNTS_URL || '(default: accounts.zoho.com)',
+      ZOHO_BOOKS_URL:     process.env.ZOHO_BOOKS_URL   || '(default)',
+      JWT_SECRET:         process.env.JWT_SECRET       ? '✓ SET' : '❌ NOT SET',
+      ADMIN_EMAIL:        process.env.ADMIN_EMAIL      || '❌ NOT SET',
+    },
+    token: null,
+    error: null,
+  };
+  try {
+    const { getAccessToken } = require('./src/services/zohoAuth');
+    const token = await getAccessToken();
+    result.token = token ? '✓ Token obtained: ' + token.slice(0,10) + '...' : '❌ Empty token';
+  } catch (err) {
+    result.error = err.message;
+  }
+  res.json(result);
+});
+
+
+
 // ── Cache management ──────────────────────────────────────
 app.get('/cache/clear',  doClearCache);
 app.post('/cache/clear', doClearCache);
