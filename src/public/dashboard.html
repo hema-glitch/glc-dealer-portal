@@ -708,6 +708,14 @@
         <span>Live — Zoho Books</span>
       </div>
       <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
+      <button onclick="showSection('orders', null)" style="
+        padding:9px 18px; background:var(--red); color:white; border:none;
+        border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;
+        display:flex; align-items:center; gap:6px; font-family:inherit;
+        box-shadow:0 2px 8px rgba(200,16,46,0.3); transition:all 0.15s;
+      " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
+        📦 Place Order
+      </button>
     </div>
   </header>
 

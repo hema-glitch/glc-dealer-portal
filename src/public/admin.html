@@ -146,6 +146,8 @@
     <div class="nav-section">Schemes</div>
     <button class="nav-item" onclick="showSection('cashDiscount',this)"><span class="icon">💸</span> Cash Discount</button>
     <button class="nav-item" onclick="showSection('rebate',this)"><span class="icon">🏆</span> Rebate Tracker</button>
+    <div class="nav-section">Reports</div>
+    <button class="nav-item" onclick="showSection('allInvoices',this)"><span class="icon">📄</span> All Invoices</button>
     <div class="nav-section">System</div>
     <button class="nav-item" onclick="window.location.href='/dashboard'"><span class="icon">↩</span> Dealer View</button>
   </nav>
@@ -243,9 +245,26 @@
     <!-- ALL DEALERS -->
     <section class="section" id="section-dealers">
       <div id="dealerListView">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
           <input type="text" class="search-box" placeholder="🔍 Search dealers..." id="dealerSearch" oninput="filterDealers()" />
-          <div style="font-size:13px;color:var(--text-muted)" id="dealerCount">Loading...</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="filterCategory" onchange="filterDealers()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;">
+              <option value="">All Categories</option>
+              <option value="Standard">Standard</option>
+              <option value="Premium">Premium</option>
+            </select>
+            <select id="filterPortal" onchange="filterDealers()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;">
+              <option value="">All Portal Status</option>
+              <option value="active">Portal Active</option>
+              <option value="none">No Portal Access</option>
+            </select>
+            <select id="filterOutstanding" onchange="filterDealers()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;">
+              <option value="">Any Balance</option>
+              <option value="overdue">Has Balance</option>
+              <option value="clear">Zero Balance</option>
+            </select>
+            <div style="font-size:13px;color:var(--text-muted)" id="dealerCount">Loading...</div>
+          </div>
         </div>
         <div class="card">
           <table class="data-table">
@@ -311,6 +330,44 @@
       </div>
     </section>
 
+
+    <!-- ALL INVOICES -->
+    <section class="section" id="section-allInvoices">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <input type="text" class="search-box" placeholder="🔍 Search invoice # or dealer..." id="invoiceSearch" oninput="filterInvoices()" style="width:280px" />
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select id="filterInvStatus" onchange="filterInvoices()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;">
+            <option value="">All Statuses</option>
+            <option value="sent">Unpaid / Sent</option>
+            <option value="overdue">Overdue</option>
+            <option value="paid">Paid</option>
+            <option value="partiallypaid">Partial</option>
+            <option value="draft">Draft</option>
+          </select>
+          <button onclick="loadAllInvoicesSection()" style="padding:8px 14px;background:var(--red);color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">↻ Load All Invoices</button>
+          <div style="font-size:13px;color:var(--text-muted);align-self:center" id="invoiceCount"></div>
+        </div>
+      </div>
+      <div class="card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Invoice #</th>
+              <th>Dealer</th>
+              <th>Date</th>
+              <th>Due Date</th>
+              <th>Amount</th>
+              <th>Balance</th>
+              <th>Status</th>
+              <th>3% Discount</th>
+            </tr>
+          </thead>
+          <tbody id="allInvoicesTbody">
+            <tr><td colspan="8"><div class="empty-state"><div class="icon">📄</div><p>Click "Load All Invoices" to fetch from Zoho Books</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -386,10 +443,83 @@ function renderDealerTable(dealers) {
 }
 
 function filterDealers() {
-  const q = document.getElementById('dealerSearch').value.toLowerCase();
-  renderDealerTable(allDealers.filter(d =>
-    d.name.toLowerCase().includes(q) || d.email.toLowerCase().includes(q)
-  ));
+  const q        = document.getElementById('dealerSearch').value.toLowerCase();
+  const cat      = document.getElementById('filterCategory').value;
+  const portal   = document.getElementById('filterPortal').value;
+  const bal      = document.getElementById('filterOutstanding').value;
+
+  renderDealerTable(allDealers.filter(d => {
+    if (q && !d.name.toLowerCase().includes(q) && !d.email.toLowerCase().includes(q)) return false;
+    if (cat && d.category !== cat) return false;
+    if (portal === 'active' && !d.hasPortal) return false;
+    if (portal === 'none'   &&  d.hasPortal) return false;
+    if (bal === 'overdue' && d.outstanding <= 0) return false;
+    if (bal === 'clear'   && d.outstanding  > 0) return false;
+    return true;
+  }));
+}
+
+// ── All Invoices Section ──────────────────────────────
+let allInvoicesData = [];
+
+async function loadAllInvoicesSection() {
+  const tbody = document.getElementById('allInvoicesTbody');
+  tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="icon">⏳</div><p>Loading invoices from all dealers... this may take a moment</p></div></td></tr>';
+  document.getElementById('invoiceCount').textContent = 'Loading...';
+
+  const results = [];
+  for (const dealer of allDealers.slice(0, 15)) {
+    try {
+      const cached = dealerCache[dealer.id];
+      let invList;
+      if (cached) {
+        invList = cached.invoices;
+      } else {
+        const res  = await fetch(`/api/admin/dealer/${dealer.id}`);
+        const data = await res.json();
+        if (data.success) {
+          dealerCache[dealer.id] = data;
+          invList = data.invoices;
+        }
+      }
+      if (invList) {
+        invList.forEach(inv => results.push({ ...inv, dealerName: dealer.name, dealerId: dealer.id }));
+      }
+    } catch {}
+  }
+
+  allInvoicesData = results.sort((a,b) => new Date(b.date||0) - new Date(a.date||0));
+  document.getElementById('invoiceCount').textContent = `${allInvoicesData.length} invoices`;
+  renderAllInvoices(allInvoicesData);
+}
+
+function filterInvoices() {
+  const q      = document.getElementById('invoiceSearch').value.toLowerCase();
+  const status = document.getElementById('filterInvStatus').value;
+  renderAllInvoices(allInvoicesData.filter(inv => {
+    if (q && !(inv.number||'...').toLowerCase().includes(q) && !(inv.dealerName||'...').toLowerCase().includes(q)) return false;
+    if (status && inv.status !== status) return false;
+    return true;
+  }));
+}
+
+function renderAllInvoices(list) {
+  const tbody = document.getElementById('allInvoicesTbody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>No invoices match the filter</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(inv => `
+    <tr onclick="viewDealer('${inv.dealerId}');showSection('dealers',null)" style="cursor:pointer">
+      <td><strong style="color:var(--red)">${inv.number || inv.id}</strong></td>
+      <td>${inv.dealerName}</td>
+      <td>${inv.date || '—'}</td>
+      <td>${inv.dueDate || '—'}</td>
+      <td>AED ${fmt(inv.total)}</td>
+      <td style="color:${inv.balance>0?'var(--red)'  :'var(--green)'};font-weight:700">AED ${fmt(inv.balance)}</td>
+      <td>${statusBadge(inv.status)}</td>
+      <td>${inv.cash_discount_eligible ? `<span class="badge badge-green">AED ${fmt(inv.cash_discount_amount)}</span>` : '<span class="badge badge-gray">—</span>'}</td>
+    </tr>`).join('');
 }
 
 // ── Dealer Detail ─────────────────────────────────────
@@ -599,6 +729,7 @@ async function loadRebateReport() {
 const pageTitles = {
   overview: 'Admin Overview', dealers: 'All Dealers',
   cashDiscount: 'Cash Discount Tracker', rebate: 'Rebate Tracker',
+  allInvoices: 'All Invoices',
 };
 
 function showSection(id, el) {
