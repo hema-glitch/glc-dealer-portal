@@ -147,7 +147,11 @@ router.post('/foc-config', async (req, res) => {
     console.log(`[Admin] FOC updated for item ${item_id} in Zoho Books`);
     res.json({ success: true, item: updatedItem });
   } catch (err) {
-    console.error('[Admin] foc-config save error:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('[Admin] foc-config save error:', err.message, err.details || '');
+    res.status(err.status || 500).json({
+      error: err.message,
+      details: err.details || null,
+      hint: 'Check Zoho OAuth scope/token, data-center URLs, and ZOHO_ORG_ID in Vercel.',
+    });
   }
 });

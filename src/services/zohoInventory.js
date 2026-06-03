@@ -129,15 +129,24 @@ async function updateItemFOC(itemId, { active, slabBuy, slabFree, category }) {
     { label: 'FOC Category', value: active ? (category || 'All') : 'All' },
   ];
 
-  const response = await axios.put(
-    `${BOOKS_URL}/items/${itemId}`,
-    { custom_fields: customFields },
-    {
-      headers: { Authorization: auth, 'Content-Type': 'application/json' },
-      params:  { organization_id: ORG_ID },
-      timeout: 15000,
-    }
-  );
+  let response;
+  try {
+    response = await axios.put(
+      `${BOOKS_URL}/items/${itemId}`,
+      { custom_fields: customFields },
+      {
+        headers: { Authorization: auth, 'Content-Type': 'application/json' },
+        params:  { organization_id: ORG_ID },
+        timeout: 15000,
+      }
+    );
+  } catch (err) {
+    const details = err.response?.data || err.message;
+    const e = new Error(`Zoho item update failed with HTTP ${err.response?.status || 'error'}: ${JSON.stringify(details)}`);
+    e.status = err.response?.status || 502;
+    e.details = details;
+    throw e;
+  }
 
   if (response.data?.code !== 0) {
     throw new Error(`Zoho error: ${response.data?.message}`);

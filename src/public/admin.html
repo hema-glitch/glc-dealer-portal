@@ -475,6 +475,14 @@
 let allDealers = [];
 let dealerCache = {};
 
+function apiErrorMessage(data) {
+  if (!data) return 'Unknown error';
+  const parts = [data.error || 'Request failed'];
+  if (data.details) parts.push(typeof data.details === 'string' ? data.details : JSON.stringify(data.details));
+  if (data.hint) parts.push(data.hint);
+  return parts.join('\n\n');
+}
+
 // ── Init ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => loadAll());
 
@@ -1023,7 +1031,7 @@ async function saveFOCConfig() {
       closeFOCModal();
       await loadFOCConfig(); // reload from Zoho to show updated state
     } else {
-      alert('Error: ' + data.error);
+      alert('Error: ' + apiErrorMessage(data));
     }
   } catch (err) {
     alert('Save failed: ' + err.message);
@@ -1046,7 +1054,7 @@ async function removeFOC(itemId) {
       showToast('✓ FOC removed from Zoho Books');
       await loadFOCConfig(); // reload from Zoho
     } else {
-      alert('Error: ' + data.error);
+      alert('Error: ' + apiErrorMessage(data));
     }
   } catch (err) {
     alert('Error: ' + err.message);

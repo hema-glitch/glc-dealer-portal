@@ -26,11 +26,20 @@ async function getAccessToken() {
     grant_type:    'refresh_token',
   });
 
-  const response = await axios.post(
-    `${ZOHO_ACCOUNTS}/oauth/v2/token`,
-    params.toString(),
-    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-  );
+  let response;
+  try {
+    response = await axios.post(
+      `${ZOHO_ACCOUNTS}/oauth/v2/token`,
+      params.toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+  } catch (err) {
+    const details = err.response?.data || err.message;
+    const e = new Error(`Zoho OAuth token refresh failed: ${JSON.stringify(details)}`);
+    e.status = err.response?.status || 502;
+    e.details = details;
+    throw e;
+  }
 
   const { access_token, expires_in } = response.data;
   if (!access_token) throw new Error('No access_token in Zoho response: ' + JSON.stringify(response.data));
