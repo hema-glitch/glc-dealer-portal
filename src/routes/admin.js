@@ -1,179 +1,209 @@
 /**
- * admin.js — Route: /api/admin
- * Auth + admin guard applied at server.js level.
+ * schemeEngine.js
+ * Business logic: FOC, Cash Discount, Rebate — with dealer category support.
+ *
+ * FOC CONFIG: Edit via Admin Panel → FOC Config tab.
+ * Config is saved to /tmp/foc-config.json on Vercel (persists within a container).
+ * For permanent persistence: copy the JSON shown in admin and update FOC_DEFAULTS below.
  */
 
-const express = require('express');
-const {
-  getAllDealers, getDealerById,
-  getInvoicesForDealer, getPaymentsForDealer,
-  getDealerOutstanding,
-} = require('../services/zohoBooks');
-const { processCashDiscounts, calculateRebate, getRules } = require('../services/schemeEngine');
+const fs   = require('fs');
+const path = require('path');
 
-const router = express.Router();
+const FOC_CONFIG_FILE = process.env.VERCEL
+  ? '/tmp/foc-config.json'
+  : path.join(__dirname, '../../foc-config.json');
 
-// ─── GET /api/admin/dealers ──────────────────────────────────
-router.get('/dealers', async (req, res) => {
-  try {
-    const dealers = await getAllDealers();
-    const summary = dealers.map(d => ({
-      id:          d.contact_id,
-      name:        d.contact_name || '—',
-      email:       d.email        || '—',
-      phone:       d.phone        || '—',
-      outstanding: parseFloat(d.outstanding_receivable_amount || 0),
-      currency:    d.currency_code || 'AED',
-      status:      d.status,
-      category:    d.custom_fields?.find(f => f.label === 'Dealer Category')?.value || 'Standard',
-      hasPortal:   !!(d.custom_fields?.find(f => f.label === 'Portal Password')?.value),
-    }));
-    res.json({ success: true, dealers: summary, total: summary.length });
-  } catch (err) {
-    console.error('[Admin] dealers error:', err.message);
-    res.status(500).json({ error: 'Failed to load dealers' });
+// ─── DEFAULT FOC CONFIG (hardcoded fallback) ──────────────────────────────────
+// Replace with real Zoho Item IDs. Find them in Admin → FOC Config → Product List.
+// Format: 'ZOHO_ITEM_ID': { slabBuy: 10, slabFree: 2, name: 'Product Name', categories: ['Standard','Premium'] }
+const FOC_DEFAULTS = {
+  // EXAMPLE (uncomment and replace with real IDs):
+  // '4815000000085085': { slabBuy: 10, slabFree: 2, name: 'Acrylic Putty', categories: ['Standard','Premium'] },
+  // '4815000000085091': { slabBuy:  5, slabFree: 1, name: 'Al Moukawem',   categories: ['Premium'] },
+};
+
+// ─── Read config ─────────────────────────────────────────────────────────────
+// Priority: 1) FOC_CONFIG_JSON env var (works across all Vercel containers)
+//           2) /tmp/foc-config.json (same container only)
+//           3) FOC_DEFAULTS (hardcoded fallback)
+function getFOCConfig() {
+  // 1. Env var — shared across all serverless containers
+  if (process.env.FOC_CONFIG_JSON) {
+    try { return JSON.parse(process.env.FOC_CONFIG_JSON); } catch {}
   }
-});
-
-// ─── GET /api/admin/dealer/:id ───────────────────────────────
-// Full dealer report — invoices, payments, cash discount, rebate
-router.get('/dealer/:id', async (req, res) => {
+  // 2. /tmp file — same container only (local dev or same warm container)
   try {
-    const { id } = req.params;
-    const [dealer, invoices, payments, outstandingAmt] = await Promise.all([
-      getDealerById(id),
-      getInvoicesForDealer(id),
-      getPaymentsForDealer(id).catch(() => []),
-      getDealerOutstanding(id).catch(() => 0),
-    ]);
-
-    const category    = dealer?.custom_fields?.find(f => f.label === 'Dealer Category')?.value || 'Standard';
-    const cashDiscount = processCashDiscounts(invoices, payments, category);
-    const rebate       = calculateRebate(invoices, category);
-    const rules        = getRules(category);
-
-    res.json({
-      success: true,
-      dealer: {
-        id, name: dealer?.contact_name || '—',
-        email: dealer?.email || '—', phone: dealer?.phone || '—', category,
-      },
-      // FIX: was returning bare number — admin.html reads outstanding.outstanding
-      outstanding: {
-        outstanding: parseFloat(outstandingAmt || 0),
-        currency: 'AED',
-      },
-      invoices: invoices.slice(0, 20).map(inv => ({
-        id:      inv.invoice_id,   number:  inv.invoice_number,
-        date:    inv.date,         dueDate: inv.due_date,
-        total:   parseFloat(inv.total   || 0),
-        balance: parseFloat(inv.balance || 0),
-        status:  inv.status,
-        display_status:         inv.display_status,
-        cash_discount_eligible: inv.cash_discount_eligible,
-        cash_discount_amount:   inv.cash_discount_amount,
-      })),
-      cashDiscount,
-      rebate,
-      schemeRules: {
-        cashDiscountRate: (rules.cashDiscountRate * 100) + '%',
-        cashDiscountDays: rules.cashDiscountDays,
-        rebateRate:       (rules.rebateRate * 100) + '%',
-        rebateCap:        rules.rebateCap,
-        category,
-      },
-      summary: {
-        totalInvoices: invoices.length,
-        totalPaid:     invoices.filter(i => i.status === 'paid').length,
-        totalOverdue:  invoices.filter(i => i.status === 'overdue').length,
-        openInvoices:  invoices.filter(i => ['unpaid','sent','overdue','partiallypaid'].includes(i.status)).length,
-      },
-    });
-  } catch (err) {
-    console.error('[Admin] dealer detail error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── GET /api/admin/summary ──────────────────────────────────
-// High-level KPIs for overview page
-router.get('/summary', async (req, res) => {
-  try {
-    const dealers = await getAllDealers();
-    const totalOutstanding = dealers.reduce((s, d) =>
-      s + parseFloat(d.outstanding_receivable_amount || 0), 0);
-    res.json({
-      success: true,
-      totalDealers:    dealers.length,
-      totalOutstanding: Math.round(totalOutstanding * 100) / 100,
-      currency: 'AED',
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-module.exports = router;
-
-// ─── GET /api/admin/products ─────────────────────────────────
-// Lists all products with their Zoho item_id exposed (needed for FOC config)
-router.get('/products', async (req, res) => {
-  try {
-    const { getAllProducts } = require('../services/zohoInventory');
-    const { getFOCConfig }   = require('../services/schemeEngine');
-    const items     = await getAllProducts();
-    const focConfig = getFOCConfig();
-
-    const products = items.map(item => ({
-      item_id:  item.item_id,
-      name:     item.name,
-      sku:      item.sku || '',
-      rate:     item.rate || 0,
-      stock:    item.available_stock || item.stock_on_hand || 0,
-      category: item.category_name || 'General',
-      foc:      focConfig[item.item_id] || null,
-    }));
-
-    res.json({ success: true, products });
-  } catch (err) {
-    console.error('[Admin] products error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── GET /api/admin/foc-config ───────────────────────────────
-router.get('/foc-config', (req, res) => {
-  const { getFOCConfig } = require('../services/schemeEngine');
-  res.json({ success: true, config: getFOCConfig() });
-});
-
-// ─── POST /api/admin/foc-config ──────────────────────────────
-// Body: { item_id, slabBuy, slabFree, name, categories, active }
-// Send active:false to remove a product from FOC
-router.post('/foc-config', (req, res) => {
-  try {
-    const { getFOCConfig, saveFOCConfig } = require('../services/schemeEngine');
-    const { item_id, slabBuy, slabFree, name, categories, active } = req.body;
-
-    if (!item_id) return res.status(400).json({ error: 'item_id is required' });
-
-    const config = getFOCConfig();
-
-    if (active === false || active === 'false') {
-      delete config[item_id];
-    } else {
-      config[item_id] = {
-        slabBuy:    parseInt(slabBuy)  || 10,
-        slabFree:   parseInt(slabFree) || 2,
-        name:       name || item_id,
-        categories: categories || ['Standard', 'Premium'],
-      };
+    if (fs.existsSync(FOC_CONFIG_FILE)) {
+      return JSON.parse(fs.readFileSync(FOC_CONFIG_FILE, 'utf8'));
     }
-
-    saveFOCConfig(config);
-    res.json({ success: true, config });
-  } catch (err) {
-    console.error('[Admin] foc-config save error:', err.message);
-    res.status(500).json({ error: err.message });
+  } catch (e) {
+    console.error('[SchemeEngine] Error reading FOC config file:', e.message);
   }
+  // 3. Hardcoded defaults
+  return { ...FOC_DEFAULTS };
+}
+
+// ─── Save config ──────────────────────────────────────────────────────────────
+// Saves to /tmp for same-container access.
+// Also logs the vercel env command needed for permanent cross-container persistence.
+function saveFOCConfig(config) {
+  try { fs.writeFileSync(FOC_CONFIG_FILE, JSON.stringify(config, null, 2)); } catch {}
+  // Log for admin reference
+  console.log('[SchemeEngine] FOC config updated. For permanent save run:');
+  console.log(`npx vercel env add FOC_CONFIG_JSON`);
+  console.log('Value:', JSON.stringify(config));
+}
+
+// ─── FOC_CONFIG proxy (always reads latest) ───────────────────────────────────
+// Use getFOCConfig() in runtime code so it picks up dynamic changes
+const FOC_CONFIG = new Proxy({}, {
+  get(_, key) { return getFOCConfig()[key]; },
+  has(_, key) { return key in getFOCConfig(); },
+  ownKeys()   { return Object.keys(getFOCConfig()); },
+  getOwnPropertyDescriptor(_, key) {
+    return { enumerable: true, configurable: true, value: getFOCConfig()[key] };
+  },
 });
+
+// ─── SCHEME RULES BY CATEGORY ─────────────────────────────────────────────────
+const SCHEME_RULES = {
+  Standard: {
+    cashDiscountRate:  0.03,
+    cashDiscountDays:  15,
+    rebateRate:        0.03,
+    rebateCap:         10000,
+    rebateCycleDays:   90,
+  },
+  Premium: {
+    cashDiscountRate:  0.03,
+    cashDiscountDays:  20,
+    rebateRate:        0.04,
+    rebateCap:         15000,
+    rebateCycleDays:   90,
+  },
+};
+
+function getRules(category) {
+  return SCHEME_RULES[category] || SCHEME_RULES.Standard;
+}
+
+// ─── FOC ──────────────────────────────────────────────────────────────────────
+
+function calculateFOC(itemId, quantity, category = 'Standard') {
+  const cfg = getFOCConfig();
+  const config = cfg[itemId];
+  if (!config) return { billableQty: quantity, freeQty: 0, scheme: null };
+  if (config.categories && !config.categories.includes(category)) {
+    return { billableQty: quantity, freeQty: 0, scheme: null };
+  }
+  const freeQty = Math.floor(quantity / config.slabBuy) * config.slabFree;
+  return {
+    billableQty: quantity,
+    freeQty,
+    scheme: freeQty > 0 ? `Buy ${config.slabBuy} Get ${config.slabFree} Free — ${config.name}` : null,
+  };
+}
+
+function calculateCartFOC(cartItems, category = 'Standard') {
+  return cartItems.map(item => ({
+    ...item,
+    ...calculateFOC(item.itemId, item.quantity, category),
+  }));
+}
+
+// ─── CASH DISCOUNT ────────────────────────────────────────────────────────────
+
+function checkCashDiscount(invoice, payment, category = 'Standard') {
+  const rules      = getRules(category);
+  const invoiceDate = new Date(invoice.date);
+  const paymentDate = new Date(payment.date);
+  const daysTaken   = Math.floor((paymentDate - invoiceDate) / 86400000);
+  const paidInFull  = parseFloat(payment.amount) >= parseFloat(invoice.total) * 0.99;
+  const paidOnTime  = daysTaken <= rules.cashDiscountDays;
+  const eligible    = paidInFull && paidOnTime;
+
+  return {
+    invoiceId:      invoice.invoice_id || invoice.invoice_number,
+    eligible,
+    discountAmount: eligible ? Math.round(parseFloat(invoice.total) * rules.cashDiscountRate * 100) / 100 : 0,
+    daysTaken,
+    paidInFull,
+    paidOnTime,
+    windowDays:     rules.cashDiscountDays,
+    reason: !eligible
+      ? (!paidInFull ? 'Payment not in full' : `Paid after ${daysTaken} days (limit: ${rules.cashDiscountDays})`)
+      : `Paid within ${daysTaken} days ✓`,
+  };
+}
+
+function processCashDiscounts(invoices, payments, category = 'Standard') {
+  const paymentMap = {};
+  payments.forEach(p => { if (p.invoice_id) paymentMap[p.invoice_id] = p; });
+
+  const eligible = [], notEligible = [];
+  invoices.forEach(inv => {
+    const payment = paymentMap[inv.invoice_id];
+    if (!payment) return;
+    const result = checkCashDiscount(inv, payment, category);
+    if (result.eligible) eligible.push({ ...result, invoiceTotal: inv.total });
+    else notEligible.push({ ...result, invoiceTotal: inv.total });
+  });
+
+  return {
+    eligible,
+    notEligible,
+    totalDiscount:  Math.round(eligible.reduce((s,e) => s + e.discountAmount, 0) * 100) / 100,
+    eligibleCount:  eligible.length,
+    totalProcessed: eligible.length + notEligible.length,
+  };
+}
+
+// ─── REBATE ───────────────────────────────────────────────────────────────────
+
+function getQuarterStart() {
+  const now     = new Date();
+  const quarter = Math.floor(now.getMonth() / 3);
+  return new Date(now.getFullYear(), quarter * 3, 1);
+}
+
+function calculateRebate(invoices, category = 'Standard', cycleStartDate = null) {
+  const rules = getRules(category);
+  const start = cycleStartDate ? new Date(cycleStartDate) : getQuarterStart();
+  const end   = new Date(start);
+  end.setDate(end.getDate() + rules.rebateCycleDays);
+
+  const cycleInvoices = invoices.filter(inv => {
+    const d = new Date(inv.date);
+    return d >= start && d <= end && inv.status !== 'void';
+  });
+
+  const totalPurchases = cycleInvoices.reduce((s, inv) => s + parseFloat(inv.total || 0), 0);
+  const rawRebate      = totalPurchases * rules.rebateRate;
+  const rebateEarned   = Math.min(rawRebate, rules.rebateCap);
+  const today          = new Date();
+  const daysLeft       = Math.max(0, Math.floor((end - today) / 86400000));
+  const progress       = Math.min(100, Math.round((totalPurchases / (rules.rebateCap / rules.rebateRate)) * 100));
+
+  return {
+    cycleStart:     start.toISOString().split('T')[0],
+    cycleEnd:       end.toISOString().split('T')[0],
+    totalPurchases: Math.round(totalPurchases * 100) / 100,
+    rebateEarned:   Math.round(rebateEarned   * 100) / 100,
+    rebateCapped:   rawRebate > rules.rebateCap,
+    maxRebate:      rules.rebateCap,
+    rebateRate:     rules.rebateRate * 100,
+    progress,
+    daysLeft,
+    invoiceCount:   cycleInvoices.length,
+    category,
+  };
+}
+
+module.exports = {
+  getFOCConfig, saveFOCConfig,
+  calculateFOC, calculateCartFOC,
+  checkCashDiscount, processCashDiscounts,
+  calculateRebate,
+  getRules, FOC_CONFIG, SCHEME_RULES,
+};

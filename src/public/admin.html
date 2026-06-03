@@ -374,7 +374,7 @@
     <section class="section" id="section-focConfig">
       <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:16px;margin-bottom:20px;font-size:13px;color:#92400e">
         <strong>⚡ How to enable FOC:</strong> Find the product below → click "Enable FOC" → set Buy/Free slab → Save.
-        Changes take effect immediately. The Zoho Item ID is the internal ID used to match orders.
+        After saving, <strong>run the shown PowerShell command</strong> to make it permanent across all servers.
       </div>
 
       <div class="card">
@@ -1016,6 +1016,8 @@ async function saveFOCConfig() {
       renderActiveFOC();
       closeFOCModal();
       showToast(`FOC enabled for ${itemName}!`);
+      // Show permanent save panel
+      showPermanentSavePanel(data.vercelEnvValue, data.vercelEnvInstruction);
     } else {
       alert('Error: ' + data.error);
     }
@@ -1038,6 +1040,7 @@ async function removeFOC(itemId) {
       renderFOCProducts(focProducts);
       renderActiveFOC();
       showToast('FOC scheme removed');
+      showPermanentSavePanel(data.vercelEnvValue, data.vercelEnvInstruction);
     }
   } catch (err) {
     alert('Error: ' + err.message);
@@ -1050,6 +1053,43 @@ function showToast(msg) {
   t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1a1a1a;color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3)';
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3000);
+}
+
+function showPermanentSavePanel(envValue, instruction) {
+  // Remove existing panel if any
+  const old = document.getElementById('permanentSavePanel');
+  if (old) old.remove();
+
+  const panel = document.createElement('div');
+  panel.id = 'permanentSavePanel';
+  panel.innerHTML = `
+    <div style="position:fixed;bottom:24px;right:24px;width:440px;background:#1a1a2e;color:white;border-radius:14px;padding:20px;box-shadow:0 8px 40px rgba(0,0,0,0.4);z-index:9999;animation:slideUp 0.3s ease">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-weight:800;font-size:14px">⚡ Make FOC Permanent</div>
+        <button onclick="document.getElementById('permanentSavePanel').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);font-size:18px;cursor:pointer">×</button>
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:10px">
+        FOC is saved but may reset when Vercel restarts the server.<br>
+        Run this command in PowerShell to make it permanent:
+      </div>
+      <div style="background:#0d0d1a;border-radius:8px;padding:10px;font-family:monospace;font-size:12px;color:#a3e635;margin-bottom:8px;line-height:1.5">
+        npx vercel env add FOC_CONFIG_JSON<br>
+        <span style="color:#fde68a"># Paste this value when prompted:</span><br>
+        <span id="focEnvValue" style="word-break:break-all;color:#67e8f9">${envValue || '{}'}</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="navigator.clipboard.writeText('${(envValue||'{}').replace(/'/g,"\'")}').then(()=>showToast('Copied!'))"
+          style="flex:1;padding:8px;background:var(--red);color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">
+          📋 Copy JSON Value
+        </button>
+        <button onclick="document.getElementById('permanentSavePanel').remove()"
+          style="padding:8px 12px;background:rgba(255,255,255,0.1);color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(panel);
 }
 
 </script>

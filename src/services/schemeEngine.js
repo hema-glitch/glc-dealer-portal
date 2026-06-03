@@ -23,22 +23,36 @@ const FOC_DEFAULTS = {
   // '4815000000085091': { slabBuy:  5, slabFree: 1, name: 'Al Moukawem',   categories: ['Premium'] },
 };
 
-// ─── Read config (file overrides defaults) ────────────────────────────────────
+// ─── Read config ─────────────────────────────────────────────────────────────
+// Priority: 1) FOC_CONFIG_JSON env var (works across all Vercel containers)
+//           2) /tmp/foc-config.json (same container only)
+//           3) FOC_DEFAULTS (hardcoded fallback)
 function getFOCConfig() {
+  // 1. Env var — shared across all serverless containers
+  if (process.env.FOC_CONFIG_JSON) {
+    try { return JSON.parse(process.env.FOC_CONFIG_JSON); } catch {}
+  }
+  // 2. /tmp file — same container only (local dev or same warm container)
   try {
     if (fs.existsSync(FOC_CONFIG_FILE)) {
-      const raw = fs.readFileSync(FOC_CONFIG_FILE, 'utf8');
-      return JSON.parse(raw);
+      return JSON.parse(fs.readFileSync(FOC_CONFIG_FILE, 'utf8'));
     }
   } catch (e) {
-    console.error('[SchemeEngine] Error reading FOC config:', e.message);
+    console.error('[SchemeEngine] Error reading FOC config file:', e.message);
   }
-  return FOC_DEFAULTS;
+  // 3. Hardcoded defaults
+  return { ...FOC_DEFAULTS };
 }
 
 // ─── Save config ──────────────────────────────────────────────────────────────
+// Saves to /tmp for same-container access.
+// Also logs the vercel env command needed for permanent cross-container persistence.
 function saveFOCConfig(config) {
-  fs.writeFileSync(FOC_CONFIG_FILE, JSON.stringify(config, null, 2));
+  try { fs.writeFileSync(FOC_CONFIG_FILE, JSON.stringify(config, null, 2)); } catch {}
+  // Log for admin reference
+  console.log('[SchemeEngine] FOC config updated. For permanent save run:');
+  console.log(`npx vercel env add FOC_CONFIG_JSON`);
+  console.log('Value:', JSON.stringify(config));
 }
 
 // ─── FOC_CONFIG proxy (always reads latest) ───────────────────────────────────
