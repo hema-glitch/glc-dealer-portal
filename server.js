@@ -4,6 +4,8 @@ const cookieParser = require('cookie-parser');
 const cors         = require('cors');
 const path         = require('path');
 
+const { authMiddleware, adminMiddleware } = require('./src/middleware/authMiddleware');
+
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
@@ -13,13 +15,20 @@ app.use(cookieParser());
 app.use(cors({ origin: true, credentials: true }));
 app.use('/static', express.static(path.join(__dirname, 'src/public')));
 
-// ── Pages ─────────────────────────────────────────────────
-app.get('/',          (req, res) => res.redirect('/login'));
-app.get('/login',     (req, res) => res.sendFile(path.join(__dirname, 'src/public/login.html')));
-app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'src/public/dashboard.html')));
-app.get('/admin',     (req, res) => res.sendFile(path.join(__dirname, 'src/public/admin.html')));
+// ── Public pages (no auth) ────────────────────────────────
+app.get('/',      (req, res) => res.redirect('/login'));
+app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'src/public/login.html')));
 
-// ── API ───────────────────────────────────────────────────
+// ── Protected pages (auth required) ──────────────────────
+// FIX: /dashboard and /admin were previously unguarded — anyone could access them.
+app.get('/dashboard', authMiddleware, (req, res) =>
+  res.sendFile(path.join(__dirname, 'src/public/dashboard.html'))
+);
+app.get('/admin', authMiddleware, adminMiddleware, (req, res) =>
+  res.sendFile(path.join(__dirname, 'src/public/admin.html'))
+);
+
+// ── API routes ────────────────────────────────────────────
 app.use('/api/auth',      require('./src/routes/auth'));
 app.use('/api/admin',     require('./src/routes/admin'));
 app.use('/api/dashboard', require('./src/routes/dashboard'));
@@ -33,7 +42,7 @@ app.get('/health', (req, res) => res.json({
   timestamp: new Date().toISOString(),
 }));
 
-// ── Cache management (GET so it works in browser) ─────────
+// ── Cache management ──────────────────────────────────────
 app.get('/cache/status', (req, res) => {
   const fs   = require('fs');
   const file = process.env.VERCEL ? '/tmp/.glc-cache.json' : path.join(__dirname, '.cache.json');
@@ -42,15 +51,14 @@ app.get('/cache/status', (req, res) => {
     const now     = Date.now();
     const entries = Object.entries(store).map(([key, entry]) => ({
       key,
-      expiresIn: Math.round((entry.expiresAt - now) / 1000) + 's',
-      expired:   now > entry.expiresAt,
+      expiresIn: Math.round(((entry.expiresAt || 0) - now) / 1000) + 's',
+      expired:   now > (entry.expiresAt || 0),
     }));
     res.json({ cacheEntries: entries.length, entries });
   } catch {
-    res.json({ cacheEntries: 0, note: 'No cache yet — load dashboard first' });
+    res.json({ cacheEntries: 0, note: 'No cache yet' });
   }
 });
-
 app.get('/cache/clear',  doClearCache);
 app.post('/cache/clear', doClearCache);
 function doClearCache(req, res) {
@@ -59,7 +67,7 @@ function doClearCache(req, res) {
   res.json({ success: true, message: 'Cache cleared' });
 }
 
-// ── Zoho OAuth callback ────────────────────────────────────
+// ── Zoho OAuth callback ───────────────────────────────────
 app.get('/zoho/callback', async (req, res) => {
   const { code } = req.query;
   if (!code) return res.send('No code received.');
@@ -79,13 +87,13 @@ app.get('/zoho/callback', async (req, res) => {
   }
 });
 
+// ── 404 / Error handlers ──────────────────────────────────
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
   console.error('[Error]', err.message);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Only listen when running locally (not on Vercel)
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`\n✅ GLC Dealer Portal → http://localhost:${PORT}`);
