@@ -112,17 +112,37 @@ async function getDealerByEmail(email) {
 
     if (!match?.contact_id) return null;
 
-    // Step 2: fetch full contact detail — required to get custom_fields (Portal Password, Dealer Category)
+    // Step 2: fetch full contact detail to get custom_fields (Portal Password, Dealer Category)
+    // The list endpoint strips custom_fields; the detail endpoint returns them.
     const auth = await getAuthHeader();
-    const { data } = await axios.get(`${BOOKS_URL}/contacts/${match.contact_id}`, {
-      headers: { Authorization: auth },
-      params:  { organization_id: ORG_ID },
-      timeout: 15000,
-    });
-    if (data.code !== 0) throw new Error(`Zoho contact fetch failed: ${data.message}`);
+    let data;
+    try {
+      const res = await axios.get(`${BOOKS_URL}/contacts/${match.contact_id}`, {
+        headers: { Authorization: auth },
+        params:  { organization_id: ORG_ID },
+        timeout: 15000,
+      });
+      data = res.data;
+    } catch (err) {
+      console.error('[ZohoBooks] getDealerByEmail detail fetch HTTP error:', err.response?.data || err.message);
+      // Fall back to list result — may lack custom_fields but prevents crash
+      return match;
+    }
 
-    const dealer = data.contact;
-    await setCache(`dealer_detail_${dealer.contact_id}`, dealer, TTL.dealer);
+    console.log('[ZohoBooks] getDealerByEmail detail response code:', data?.code, 'contact:', data?.contact ? 'present' : 'NULL');
+
+    if (data.code !== 0) {
+      console.error('[ZohoBooks] getDealerByEmail Zoho error:', data.code, data.message);
+      // Fall back to list result rather than throwing
+      return match;
+    }
+
+    const dealer = data.contact || match; // fallback to list result if contact is null
+    if (!dealer) return null;
+
+    if (dealer.contact_id) {
+      await setCache(`dealer_detail_${dealer.contact_id}`, dealer, TTL.dealer);
+    }
     return dealer;
   });
 }

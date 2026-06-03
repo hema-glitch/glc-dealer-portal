@@ -129,7 +129,8 @@ router.post('/login', async (req, res) => {
 
   } catch (err) {
     console.error('[Auth] Login error:', err.message);
-    res.status(500).json({ error: 'Login failed. Please try again.' });
+    console.error('[Auth] Stack:', err.stack);
+    res.status(500).json({ error: 'Login failed. Please try again.', detail: err.message });
   }
 });
 
