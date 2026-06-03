@@ -1,90 +1,157 @@
 /**
  * zohoInventory.js
- * Falls back to Zoho Books /items endpoint if Inventory URL not configured.
- * This ensures products work on Vercel without needing a separate Inventory setup.
+ * Products from Zoho Books/Inventory with FOC scheme data from item custom fields.
+ *
+ * FOC is stored directly on Zoho Books items as custom fields:
+ *   cf_foc_active   : true/false
+ *   cf_foc_buy_qty  : number (e.g. 10)
+ *   cf_foc_free_qty : number (e.g. 2)
+ *   cf_foc_category : "All" | "Standard" | "Premium"
+ *
+ * One-time setup in Zoho Books:
+ *   Settings → Items → Custom Fields → Add the 4 fields above
  */
 
 const axios = require('axios');
 const { getAuthHeader } = require('./zohoAuth');
 
-// Use Inventory URL if set, otherwise fall back to Books URL
-const BASE_URL = process.env.ZOHO_INVENTORY_URL || process.env.ZOHO_BOOKS_URL;
-const ORG_ID   = process.env.ZOHO_ORG_ID;
+const BASE_URL = process.env.ZOHO_INVENTORY_URL || process.env.ZOHO_BOOKS_URL || 'https://www.zohoapis.com/books/v3';
+const BOOKS_URL = process.env.ZOHO_BOOKS_URL || 'https://www.zohoapis.com/books/v3';
+const ORG_ID = process.env.ZOHO_ORG_ID;
 
-async function invGet(endpoint, params = {}) {
-  const auth = await getAuthHeader();
-  try {
-    const response = await axios.get(`${BASE_URL}${endpoint}`, {
-      headers: { Authorization: auth },
-      params:  { organization_id: ORG_ID, ...params },
-      timeout: 7000,
-    });
-    return response.data;
-  } catch (err) {
-    console.error(`[ZohoInventory] GET ${endpoint} failed:`, err.response?.data || err.message);
-    throw err;
-  }
+// ─── Helper: extract custom field value ───────────────────────────────────────
+function getCF(customFields, apiName, label) {
+  if (!Array.isArray(customFields)) return null;
+  const f = customFields.find(f =>
+    f.api_name === apiName ||
+    f.label    === label   ||
+    f.api_name === `cf_${label?.toLowerCase().replace(/\s+/g, '_')}`
+  );
+  if (!f) return null;
+  return f.value ?? f.cf_value ?? null;
 }
 
+// ─── Parse FOC custom fields from a Zoho item ─────────────────────────────────
+function parseFOC(item) {
+  const cf = item.custom_fields || [];
+
+  // Support both custom field names (admin may name them differently)
+  const active  = getCF(cf, 'cf_foc_active',   'FOC Active')   ||
+                  getCF(cf, 'cf_foc_enabled',   'FOC Enabled');
+  const buyQty  = getCF(cf, 'cf_foc_buy_qty',  'FOC Buy Qty')  ||
+                  getCF(cf, 'cf_foc_buy',       'FOC Buy');
+  const freeQty = getCF(cf, 'cf_foc_free_qty', 'FOC Free Qty') ||
+                  getCF(cf, 'cf_foc_free',      'FOC Free');
+  const catRaw  = getCF(cf, 'cf_foc_category', 'FOC Category') || 'All';
+
+  const isActive = active === true || active === 'true' || active === '1' || active === 'Yes';
+  const slabBuy  = parseInt(buyQty)  || 0;
+  const slabFree = parseInt(freeQty) || 0;
+
+  if (!isActive || slabBuy <= 0 || slabFree <= 0) {
+    return { active: false };
+  }
+
+  // Parse categories
+  const catStr = String(catRaw).toLowerCase();
+  let categories = ['Standard', 'Premium']; // default: all
+  if (catStr === 'standard') categories = ['Standard'];
+  if (catStr === 'premium')  categories = ['Premium'];
+
+  return {
+    active:     true,
+    slabBuy,
+    slabFree,
+    categories,
+    label:      `Buy ${slabBuy} Get ${slabFree} Free`,
+    categoryLabel: catStr === 'all' || !catStr ? 'All Dealers' : catRaw,
+  };
+}
+
+// ─── GET all products ─────────────────────────────────────────────────────────
 async function getAllProducts() {
-  // Try Inventory endpoint first, fall back to Books items
+  const auth = await getAuthHeader();
   try {
-    const data = await invGet('/items', { status: 'active' });
-    // Inventory returns data.items, Books also returns data.items
-    return data.items || [];
+    const response = await axios.get(`${BASE_URL}/items`, {
+      headers: { Authorization: auth },
+      params:  { organization_id: ORG_ID, status: 'active' },
+      timeout: 15000,
+    });
+    return response.data?.items || [];
   } catch (err) {
-    console.error('[ZohoInventory] getAllProducts error:', err.message);
+    console.error('[ZohoInventory] getAllProducts error:', err.response?.data || err.message);
     return [];
   }
 }
 
+// ─── GET all products with FOC parsed ────────────────────────────────────────
+async function getAllProductsWithFOC() {
+  const items = await getAllProducts();
+  return items.map(item => ({
+    item_id:        item.item_id,
+    name:           item.name,
+    sku:            item.sku            || '',
+    rate:           item.rate           || 0,
+    currency:       item.currency_code  || 'AED',
+    unit:           item.unit           || 'pcs',
+    stock:          item.available_stock || item.stock_on_hand || 0,
+    inStock:        (item.available_stock || item.stock_on_hand || 0) > 0,
+    category:       item.category_name  || 'General',
+    custom_fields:  item.custom_fields  || [],
+    foc:            parseFOC(item),
+  }));
+}
+
+// ─── UPDATE item FOC custom fields in Zoho Books ─────────────────────────────
+// This is what admin calls when they configure FOC in the portal.
+// Writes directly to the Zoho item — no /tmp, no env vars.
+async function updateItemFOC(itemId, { active, slabBuy, slabFree, category }) {
+  const auth = await getAuthHeader();
+
+  // Build custom fields payload
+  // Zoho Books requires the custom field label or api_name
+  const customFields = [
+    { label: 'FOC Active',   value: active ? 'true' : 'false' },
+    { label: 'FOC Buy Qty',  value: active ? String(slabBuy)  : '0' },
+    { label: 'FOC Free Qty', value: active ? String(slabFree) : '0' },
+    { label: 'FOC Category', value: active ? (category || 'All') : 'All' },
+  ];
+
+  const response = await axios.put(
+    `${BOOKS_URL}/items/${itemId}`,
+    { custom_fields: customFields },
+    {
+      headers: { Authorization: auth, 'Content-Type': 'application/json' },
+      params:  { organization_id: ORG_ID },
+      timeout: 15000,
+    }
+  );
+
+  if (response.data?.code !== 0) {
+    throw new Error(`Zoho error: ${response.data?.message}`);
+  }
+  return response.data?.item;
+}
+
+// ─── GET single product ───────────────────────────────────────────────────────
 async function getProductById(itemId) {
+  const auth = await getAuthHeader();
   try {
-    const data = await invGet(`/items/${itemId}`);
-    return data.item || null;
+    const { data } = await axios.get(`${BASE_URL}/items/${itemId}`, {
+      headers: { Authorization: auth },
+      params:  { organization_id: ORG_ID },
+      timeout: 10000,
+    });
+    return data?.item || null;
   } catch (err) {
-    console.error('[ZohoInventory] getProductById error:', err.message);
     return null;
   }
 }
 
-async function getProductsByCategory(categoryName) {
-  try {
-    const data = await invGet('/items', { status: 'active', category_name: categoryName });
-    return data.items || [];
-  } catch (err) {
-    return [];
-  }
-}
-
-async function getStockLevel(itemId) {
-  try {
-    const data = await invGet(`/items/${itemId}`);
-    const item = data.item || {};
-    return {
-      itemId,
-      name:           item.name,
-      stockOnHand:    item.stock_on_hand    || 0,
-      availableStock: item.available_stock  || 0,
-      unit:           item.unit             || 'pcs',
-    };
-  } catch (err) {
-    return { itemId, stockOnHand: 0, availableStock: 0 };
-  }
-}
-
-async function getBulkStockLevels(itemIds) {
-  const results = {};
-  for (const itemId of itemIds) {
-    results[itemId] = await getStockLevel(itemId);
-  }
-  return results;
-}
-
 module.exports = {
   getAllProducts,
+  getAllProductsWithFOC,
+  updateItemFOC,
   getProductById,
-  getProductsByCategory,
-  getStockLevel,
-  getBulkStockLevels,
+  parseFOC,
 };
