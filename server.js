@@ -4,8 +4,6 @@ const cookieParser = require('cookie-parser');
 const cors         = require('cors');
 const path         = require('path');
 
-const { authMiddleware, adminMiddleware } = require('./src/middleware/authMiddleware');
-
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
@@ -15,12 +13,14 @@ app.use(cookieParser());
 app.use(cors({ origin: true, credentials: true }));
 app.use('/static', express.static(path.join(__dirname, 'src/public')));
 
-// ── Public pages (no auth) ────────────────────────────────
+// Load middleware AFTER express setup (avoids top-level crash on missing dep)
+const { authMiddleware, adminMiddleware } = require('./src/middleware/authMiddleware');
+
+// ── Public pages ──────────────────────────────────────────
 app.get('/',      (req, res) => res.redirect('/login'));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'src/public/login.html')));
 
-// ── Protected pages (auth required) ──────────────────────
-// FIX: /dashboard and /admin were previously unguarded — anyone could access them.
+// ── Protected pages ───────────────────────────────────────
 app.get('/dashboard', authMiddleware, (req, res) =>
   res.sendFile(path.join(__dirname, 'src/public/dashboard.html'))
 );
@@ -28,37 +28,22 @@ app.get('/admin', authMiddleware, adminMiddleware, (req, res) =>
   res.sendFile(path.join(__dirname, 'src/public/admin.html'))
 );
 
-// ── API routes ────────────────────────────────────────────
-app.use('/api/auth',      require('./src/routes/auth'));
-app.use('/api/admin',     require('./src/routes/admin'));
-app.use('/api/dashboard', require('./src/routes/dashboard'));
-app.use('/api/products',  require('./src/routes/products'));
-app.use('/api/orders',    require('./src/routes/orders'));
+// ── API routes (auth applied HERE at router level) ────────
+app.use('/api/auth',                    require('./src/routes/auth'));
+app.use('/api/admin',    authMiddleware, adminMiddleware, require('./src/routes/admin'));
+app.use('/api/dashboard',authMiddleware, require('./src/routes/dashboard'));
+app.use('/api/products', authMiddleware, require('./src/routes/products'));
+app.use('/api/orders',   authMiddleware, require('./src/routes/orders'));
 
-// ── Health ────────────────────────────────────────────────
+// ── Health (public) ───────────────────────────────────────
 app.get('/health', (req, res) => res.json({
-  status: 'ok', service: 'GLC Dealer Portal',
+  status: 'ok',
+  service: 'GLC Dealer Portal',
   env: process.env.VERCEL ? 'vercel' : 'local',
   timestamp: new Date().toISOString(),
 }));
 
 // ── Cache management ──────────────────────────────────────
-app.get('/cache/status', (req, res) => {
-  const fs   = require('fs');
-  const file = process.env.VERCEL ? '/tmp/.glc-cache.json' : path.join(__dirname, '.cache.json');
-  try {
-    const store   = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const now     = Date.now();
-    const entries = Object.entries(store).map(([key, entry]) => ({
-      key,
-      expiresIn: Math.round(((entry.expiresAt || 0) - now) / 1000) + 's',
-      expired:   now > (entry.expiresAt || 0),
-    }));
-    res.json({ cacheEntries: entries.length, entries });
-  } catch {
-    res.json({ cacheEntries: 0, note: 'No cache yet' });
-  }
-});
 app.get('/cache/clear',  doClearCache);
 app.post('/cache/clear', doClearCache);
 function doClearCache(req, res) {
@@ -67,13 +52,30 @@ function doClearCache(req, res) {
   res.json({ success: true, message: 'Cache cleared' });
 }
 
+app.get('/cache/status', (req, res) => {
+  const fs   = require('fs');
+  const file = process.env.VERCEL ? '/tmp/.glc-cache.json' : path.join(__dirname, '.cache.json');
+  try {
+    const store   = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const now     = Date.now();
+    const entries = Object.entries(store).map(([key, entry]) => ({
+      key,
+      expiresIn: Math.round(((entry.x || 0) - now) / 1000) + 's',
+      expired:   now > (entry.x || 0),
+    }));
+    res.json({ cacheEntries: entries.length, entries });
+  } catch {
+    res.json({ cacheEntries: 0, note: 'No cache yet' });
+  }
+});
+
 // ── Zoho OAuth callback ───────────────────────────────────
 app.get('/zoho/callback', async (req, res) => {
   const { code } = req.query;
   if (!code) return res.send('No code received.');
   const axios = require('axios');
   try {
-    const r = await axios.post(`${process.env.ZOHO_ACCOUNTS_URL}/oauth/v2/token`, null, {
+    const r = await axios.post('https://accounts.zoho.com/oauth/v2/token', null, {
       params: {
         code, grant_type: 'authorization_code',
         client_id:     process.env.ZOHO_CLIENT_ID,
@@ -81,24 +83,21 @@ app.get('/zoho/callback', async (req, res) => {
         redirect_uri:  `${process.env.APP_URL || `http://localhost:${PORT}`}/zoho/callback`,
       },
     });
-    res.send(`<h2>✅ Success!</h2><pre style="background:#f4f4f4;padding:16px;border-radius:8px">ZOHO_REFRESH_TOKEN=${r.data.refresh_token}</pre><p>Copy this to your Vercel Environment Variables.</p>`);
+    res.send(`<h2>✅ Success!</h2><pre style="background:#f4f4f4;padding:16px;border-radius:8px">ZOHO_REFRESH_TOKEN=${r.data.refresh_token}</pre>`);
   } catch (err) {
     res.send(`<h2>❌ Error</h2><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`);
   }
 });
 
-// ── 404 / Error handlers ──────────────────────────────────
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
   console.error('[Error]', err.message);
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(500).json({ error: 'Internal server error', message: err.message });
 });
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
-    console.log(`\n✅ GLC Dealer Portal → http://localhost:${PORT}`);
-    console.log(`   Cache: http://localhost:${PORT}/cache/status`);
-    console.log(`   Clear: http://localhost:${PORT}/cache/clear\n`);
+    console.log(`\n✅ GLC Dealer Portal → http://localhost:${PORT}\n`);
   });
 }
 

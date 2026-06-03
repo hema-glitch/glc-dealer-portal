@@ -1,103 +1,62 @@
-require('dotenv').config();
-const express      = require('express');
-const cookieParser = require('cookie-parser');
-const cors         = require('cors');
-const path         = require('path');
+/**
+ * dashboard.js — Route: /api/dashboard
+ * Auth is applied at server.js level — no middleware import needed here.
+ *
+ * GET /api/dashboard            → invoices + stats (dashboard.html line 1003)
+ * GET /api/dashboard/invoice/:id → single invoice for modal (dashboard.html line 1353)
+ */
 
-const { authMiddleware, adminMiddleware } = require('./src/middleware/authMiddleware');
+const express = require('express');
+const {
+  getInvoicesForCustomer,
+  getInvoiceById,
+} = require('../services/zohoBooks');
 
-const app  = express();
-const PORT = process.env.PORT || 3000;
+const router = express.Router();
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
-app.use(cors({ origin: true, credentials: true }));
-app.use('/static', express.static(path.join(__dirname, 'src/public')));
-
-// ── Public pages ──────────────────────────────────────────
-app.get('/',      (req, res) => res.redirect('/login'));
-app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'src/public/login.html')));
-
-// ── Protected pages (auth required) ──────────────────────
-app.get('/dashboard', authMiddleware, (req, res) =>
-  res.sendFile(path.join(__dirname, 'src/public/dashboard.html'))
-);
-app.get('/admin', authMiddleware, adminMiddleware, (req, res) =>
-  res.sendFile(path.join(__dirname, 'src/public/admin.html'))
-);
-
-// ── API routes ────────────────────────────────────────────
-app.use('/api/auth',      require('./src/routes/auth'));
-app.use('/api/admin',     require('./src/routes/admin'));
-app.use('/api/dashboard', require('./src/routes/dashboard'));
-app.use('/api/products',  require('./src/routes/products'));
-app.use('/api/orders',    require('./src/routes/orders'));
-
-// ── Health ────────────────────────────────────────────────
-app.get('/health', (req, res) => res.json({
-  status: 'ok', service: 'GLC Dealer Portal',
-  env: process.env.VERCEL ? 'vercel' : 'local',
-  timestamp: new Date().toISOString(),
-}));
-
-// ── Cache management ──────────────────────────────────────
-app.get('/cache/status', (req, res) => {
-  const fs   = require('fs');
-  const file = process.env.VERCEL ? '/tmp/.glc-cache.json' : path.join(__dirname, '.cache.json');
+// GET /api/dashboard
+router.get('/', async (req, res) => {
   try {
-    const store   = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const now     = Date.now();
-    const entries = Object.entries(store).map(([key, entry]) => ({
-      key,
-      expiresIn: Math.round(((entry.x || entry.expiresAt || 0) - now) / 1000) + 's',
-      expired:   now > (entry.x || entry.expiresAt || 0),
-    }));
-    res.json({ cacheEntries: entries.length, entries });
-  } catch {
-    res.json({ cacheEntries: 0, note: 'No cache yet' });
-  }
-});
-app.get('/cache/clear',  doClearCache);
-app.post('/cache/clear', doClearCache);
-function doClearCache(req, res) {
-  const { clearAllCache } = require('./src/services/zohoBooks');
-  clearAllCache();
-  res.json({ success: true, message: 'Cache cleared' });
-}
+    const contactId    = req.dealer.contactId;
+    const forceRefresh = req.query.refresh === 'true';
 
-// ── Zoho OAuth callback ───────────────────────────────────
-app.get('/zoho/callback', async (req, res) => {
-  const { code } = req.query;
-  if (!code) return res.send('No code received.');
-  const axios = require('axios');
-  try {
-    const r = await axios.post(`${process.env.ZOHO_ACCOUNTS_URL}/oauth/v2/token`, null, {
-      params: {
-        code, grant_type: 'authorization_code',
-        client_id:     process.env.ZOHO_CLIENT_ID,
-        client_secret: process.env.ZOHO_CLIENT_SECRET,
-        redirect_uri:  `${process.env.APP_URL || `http://localhost:${PORT}`}/zoho/callback`,
-      },
+    const invoices = await getInvoicesForCustomer(contactId, {
+      incrementalOnly: !forceRefresh,
     });
-    res.send(`<h2>✅ Success!</h2><pre style="background:#f4f4f4;padding:16px;border-radius:8px">ZOHO_REFRESH_TOKEN=${r.data.refresh_token}</pre><p>Copy this to your Vercel env vars.</p>`);
+
+    const stats = invoices.reduce(
+      (acc, inv) => {
+        if (inv.due_today && inv.status !== 'paid') {
+          acc.dueTodayCount++;
+          acc.dueTodayAmount += Number(inv.balance || 0);
+        }
+        if (['unpaid', 'sent', 'overdue', 'partiallypaid'].includes(inv.status)) {
+          acc.outstanding += Number(inv.balance || 0);
+        }
+        if (inv.cash_discount_eligible && inv.status !== 'paid') {
+          acc.discountAvailable += inv.cash_discount_amount;
+        }
+        return acc;
+      },
+      { dueTodayCount: 0, dueTodayAmount: 0, outstanding: 0, discountAvailable: 0 }
+    );
+
+    res.json({ success: true, invoices, stats });
   } catch (err) {
-    res.send(`<h2>❌ Error</h2><pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>`);
+    console.error('[dashboard/] error:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.use((req, res) => res.status(404).json({ error: 'Not found' }));
-app.use((err, req, res, next) => {
-  console.error('[Error]', err.message);
-  res.status(500).json({ error: 'Internal server error' });
+// GET /api/dashboard/invoice/:id
+router.get('/invoice/:id', async (req, res) => {
+  try {
+    const invoice = await getInvoiceById(req.params.id);
+    res.json({ success: true, invoice });
+  } catch (err) {
+    console.error('[dashboard/invoice/:id] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`\n✅ GLC Dealer Portal → http://localhost:${PORT}`);
-    console.log(`   Cache: http://localhost:${PORT}/cache/status`);
-    console.log(`   Clear: http://localhost:${PORT}/cache/clear\n`);
-  });
-}
-
-module.exports = app;
+module.exports = router;
