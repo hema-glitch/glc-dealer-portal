@@ -170,6 +170,41 @@ app.get('/health/login', async (req, res) => {
   res.json({ steps });
 });
 
+// ── Zoho organization diagnostic ───────────────────────────────
+app.get('/health/org', async (req, res) => {
+  try {
+    const axios = require('axios');
+    const { getAccessToken } = require('./src/services/zohoAuth');
+
+    const token = await getAccessToken();
+
+    const response = await axios.get(
+      'https://www.zohoapis.com/books/v3/organizations',
+      {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${token}`,
+        },
+        timeout: 15000,
+      }
+    );
+
+    res.json({
+      success: true,
+      token: token.slice(0, 10) + '...',
+      organizations: response.data,
+      env_org_id: process.env.ZOHO_ORG_ID,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      status: err.response?.status,
+      zoho_response: err.response?.data,
+      error: err.message,
+      env_org_id: process.env.ZOHO_ORG_ID,
+    });
+  }
+});
+
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
   console.error('[Error]', err.message);
