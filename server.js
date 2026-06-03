@@ -119,6 +119,24 @@ app.get('/health/scopes', async (req, res) => {
   }
 });
 
+app.get('/health/item/:id', async (req, res) => {
+  try {
+    const { getProductById } = require('./src/services/zohoInventory');
+
+    const item = await getProductById(req.params.id);
+
+    res.json({
+      item_id: item.item_id,
+      name: item.name,
+      custom_fields: item.custom_fields
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message
+    });
+  }
+});
+
 // ── Cache management ──────────────────────────────────────
 app.get('/cache/clear',  doClearCache);
 app.post('/cache/clear', doClearCache);
