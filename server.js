@@ -45,21 +45,6 @@ app.get('/health', (req, res) => res.json({
   timestamp: new Date().toISOString(),
 }));
 
-// ── Diagnostic: Environment check (helps debug config issues)
-app.get('/health/env', (req, res) => {
-  const mask = (val) => val ? val.substring(0, 4) + '...' + val.substring(val.length - 4) : '❌ NOT SET';
-  res.json({
-    ZOHO_CLIENT_ID:       mask(process.env.ZOHO_CLIENT_ID),
-    ZOHO_CLIENT_SECRET:   mask(process.env.ZOHO_CLIENT_SECRET),
-    ZOHO_REFRESH_TOKEN:   mask(process.env.ZOHO_REFRESH_TOKEN),
-    ZOHO_ORG_ID:          process.env.ZOHO_ORG_ID ? '✓ SET' : '❌ NOT SET',
-    ZOHO_BOOKS_URL:       process.env.ZOHO_BOOKS_URL || '❌ NOT SET',
-    NODE_ENV:             process.env.NODE_ENV,
-    VERCEL:               process.env.VERCEL ? 'true' : 'false',
-    message: 'If values show ❌, add them to Vercel Project Settings → Environment Variables'
-  });
-});
-
 // ── Cache management ──────────────────────────────────────
 app.get('/cache/clear',  doClearCache);
 app.post('/cache/clear', doClearCache);

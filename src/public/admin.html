@@ -890,33 +890,19 @@ let focConfig   = {};
 
 async function loadFOCConfig() {
   document.getElementById('focProductTbody').innerHTML =
-    '<tr><td colspan="8"><div class="empty-state"><div class="icon">⏳</div><p>Loading from Zoho Books...</p></div></td></tr>';
+    '<tr><td colspan="8"><div class="empty-state"><div class="icon">⏳</div><p>Loading products...</p></div></td></tr>';
 
   try {
-    // Force fresh fetch (bypass cache)
-    const res = await fetch(`/api/admin/products?t=${Date.now()}`, {
-      headers: { 'Cache-Control': 'no-cache' }
-    });
+    const res  = await fetch('/api/admin/products');
     const data = await res.json();
-    
-    console.log('[FOC] API Response:', { status: res.status, data });
-    
-    if (!res.ok) {
-      throw new Error(`API Error ${res.status}: ${data.error || 'Unknown error'}`);
-    }
-    
     if (data.success) {
-      focProducts = data.products || [];
-      console.log(`[FOC] Loaded ${focProducts.length} products`);
+      focProducts = data.products;
       renderFOCProducts(focProducts);
       renderActiveFOC();
-    } else {
-      throw new Error(data.error || 'API returned success:false');
     }
   } catch (err) {
-    console.error('[FOC] Error:', err);
     document.getElementById('focProductTbody').innerHTML =
-      `<tr><td colspan="8"><div class="empty-state"><p style="color:red"><strong>⚠ Error loading products:</strong><br>${err.message}<br><br>Check browser console (F12) for details. Verify ZOHO credentials in .env are valid.</p></div></td></tr>`;
+      `<tr><td colspan="8"><div class="empty-state"><p style="color:red">Error: ${err.message}</p></div></td></tr>`;
   }
 }
 

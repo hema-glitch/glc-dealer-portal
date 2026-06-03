@@ -81,23 +81,14 @@ async function getAllProducts() {
   return remember('products_raw', PRODUCT_TTL, async () => {
     const auth = await getAuthHeader();
     try {
-      console.log('[ZohoInventory] Fetching items from Zoho Books...');
       const response = await axios.get(`${BASE_URL}/items`, {
         headers: { Authorization: auth },
         params:  { organization_id: ORG_ID, status: 'active' },
         timeout: 15000,
       });
-      const items = response.data?.items || [];
-      console.log(`[ZohoInventory] Successfully fetched ${items.length} items`);
-      // Fixed the variable name to ORG_ID (or you can just delete these debug lines entirely)
-      console.log("ZOHO ORG:", ORG_ID); 
-      return items;
+      return response.data?.items || [];
     } catch (err) {
-      console.error('[ZohoInventory] getAllProducts error:', {
-        status: err.response?.status,
-        message: err.message,
-        data: err.response?.data,
-      });
+      console.error('[ZohoInventory] getAllProducts error:', err.response?.data || err.message);
       return [];
     }
   });
@@ -107,8 +98,7 @@ async function getAllProducts() {
 async function getAllProductsWithFOC() {
   return remember('products_with_foc', PRODUCT_TTL, async () => {
     const items = await getAllProducts();
-    console.log(`[ZohoInventory] Parsing FOC data for ${items.length} items...`);
-    const result = items.map(item => ({
+    return items.map(item => ({
       item_id:        item.item_id,
       name:           item.name,
       sku:            item.sku            || '',
@@ -121,8 +111,6 @@ async function getAllProductsWithFOC() {
       custom_fields:  item.custom_fields  || [],
       foc:            parseFOC(item),
     }));
-    console.log(`[ZohoInventory] Returning ${result.length} products with FOC data`);
-    return result;
   });
 }
 
