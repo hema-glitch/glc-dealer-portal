@@ -107,7 +107,14 @@ async function getDealerByEmail(email) {
 
   return remember(`dealer_email_${normalized}`, TTL.dealer, async () => {
     // Step 1: search by email to get contact_id (list endpoint strips custom_fields)
-    const list = await booksGet('/contacts', { contact_type: 'customer', search_text: normalized });
+    let list;
+    try {
+      list = await booksGet('/contacts', { contact_type: 'customer', search_text: normalized });
+    } catch (err) {
+      console.error('[ZohoBooks] getDealerByEmail contact search failed:', err.message);
+      // Throw with a message that surfaces in the 500 detail field for diagnosis
+      throw new Error(`Zoho contacts search failed: ${err.message}`);
+    }
     const match = list.find(c => c.email?.toLowerCase() === normalized) || null;
 
     if (!match?.contact_id) return null;

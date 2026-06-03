@@ -116,6 +116,60 @@ app.get('/zoho/callback', async (req, res) => {
   }
 });
 
+
+// ── Login flow diagnostic (shows exactly where login fails) ────────────────
+app.get('/health/login', async (req, res) => {
+  const email = req.query.email || 'benton@test.com';
+  const steps = [];
+  
+  try {
+    // Step 1: token
+    steps.push({ step: 1, name: 'OAuth token' });
+    const { getAccessToken } = require('./src/services/zohoAuth');
+    const token = await getAccessToken();
+    steps[0].result = token ? 'OK: ' + token.slice(0,8) + '...' : 'FAIL: empty';
+
+    // Step 2: contacts search
+    steps.push({ step: 2, name: 'GET /contacts search' });
+    const axios = require('axios');
+    const BOOKS_URL = process.env.ZOHO_BOOKS_URL || 'https://www.zohoapis.com/books/v3';
+    const ORG_ID = process.env.ZOHO_ORG_ID;
+    const r2 = await axios.get(`${BOOKS_URL}/contacts`, {
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+      params: { organization_id: ORG_ID, contact_type: 'customer', search_text: email, per_page: 5 },
+      timeout: 10000,
+    });
+    const contacts = r2.data?.contacts || [];
+    steps[1].zoho_code = r2.data?.code;
+    steps[1].zoho_message = r2.data?.message;
+    steps[1].contacts_found = contacts.length;
+    steps[1].match = contacts.find(c => c.email?.toLowerCase() === email.toLowerCase()) ? 'FOUND' : 'NOT FOUND';
+    steps[1].result = r2.data?.code === 0 ? 'OK' : 'ERROR code:' + r2.data?.code;
+    const match = contacts.find(c => c.email?.toLowerCase() === email.toLowerCase());
+    
+    if (match) {
+      // Step 3: contact detail
+      steps.push({ step: 3, name: `GET /contacts/${match.contact_id}` });
+      const r3 = await axios.get(`${BOOKS_URL}/contacts/${match.contact_id}`, {
+        headers: { Authorization: `Zoho-oauthtoken ${token}` },
+        params: { organization_id: ORG_ID },
+        timeout: 10000,
+      });
+      const contact = r3.data?.contact;
+      steps[2].zoho_code = r3.data?.code;
+      steps[2].contact_present = contact ? 'YES' : 'NULL';
+      steps[2].custom_fields = contact?.custom_fields || [];
+      steps[2].result = (r3.data?.code === 0 && contact) ? 'OK' : 'ERROR';
+    }
+
+  } catch (err) {
+    steps[steps.length - 1].error = err.message;
+    steps[steps.length - 1].result = 'EXCEPTION';
+  }
+  
+  res.json({ steps });
+});
+
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, req, res, next) => {
   console.error('[Error]', err.message);
