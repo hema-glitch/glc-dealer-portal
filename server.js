@@ -93,31 +93,6 @@ app.get('/health/token', async (req, res) => {
   }
 });
 
-app.get('/health/scopes', async (req, res) => {
-  try {
-    const axios = require('axios');
-    const { getAccessToken } = require('./src/services/zohoAuth');
-
-    const token = await getAccessToken();
-
-    const response = await axios.get(
-      'https://accounts.zoho.com/oauth/user/info',
-      {
-        headers: {
-          Authorization: `Zoho-oauthtoken ${token}`,
-        },
-      }
-    );
-
-    res.json(response.data);
-  } catch (err) {
-    res.status(500).json({
-      status: err.response?.status,
-      data: err.response?.data,
-      error: err.message,
-    });
-  }
-});
 
 app.get('/health/item/:id', async (req, res) => {
   try {
@@ -130,6 +105,24 @@ app.get('/health/item/:id', async (req, res) => {
       name: item.name,
       custom_fields: item.custom_fields
     });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message
+    });
+  }
+});
+
+app.get('/health/products', async (req, res) => {
+  try {
+    const { getAllProducts } = require('./src/services/zohoInventory');
+
+    const products = await getAllProducts();
+
+    const item = products.find(
+      p => p.item_id === '5359248000000758982'
+    );
+
+    res.json(item);
   } catch (err) {
     res.status(500).json({
       error: err.message
