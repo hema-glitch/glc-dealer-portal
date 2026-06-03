@@ -107,10 +107,20 @@ async function getDealerByEmail(email) {
 
   return remember(`dealer_email_${normalized}`, TTL.dealer, async () => {
     const list = await booksGet('/contacts', { contact_type: 'customer', search_text: normalized });
-    const dealer = list.find(c => c.email?.toLowerCase() === normalized) || null;
-    if (dealer?.contact_id) {
-      await setCache(`dealer_detail_${dealer.contact_id}`, dealer, TTL.dealer);
-    }
+    const match = list.find(c => c.email?.toLowerCase() === normalized) || null;
+    
+    if (!match?.contact_id) return null;
+
+    // ✅ Fetch full contact to get custom_fields (list endpoint strips them)
+    const auth = await getAuthHeader();
+    const { data } = await axios.get(`${BOOKS_URL}/contacts/${match.contact_id}`, {
+      headers: { Authorization: auth },
+      params:  { organization_id: ORG_ID },
+      timeout: 15000,
+    });
+    if (data.code !== 0) throw new Error(data.message);
+    const dealer = data.contact;
+    await setCache(`dealer_detail_${dealer.contact_id}`, dealer, TTL.dealer);
     return dealer;
   });
 }
