@@ -106,19 +106,21 @@ async function getDealerByEmail(email) {
   if (!normalized) return null;
 
   return remember(`dealer_email_${normalized}`, TTL.dealer, async () => {
+    // Step 1: search by email to get contact_id (list endpoint strips custom_fields)
     const list = await booksGet('/contacts', { contact_type: 'customer', search_text: normalized });
     const match = list.find(c => c.email?.toLowerCase() === normalized) || null;
-    
+
     if (!match?.contact_id) return null;
 
-    // ✅ Fetch full contact to get custom_fields (list endpoint strips them)
+    // Step 2: fetch full contact detail — required to get custom_fields (Portal Password, Dealer Category)
     const auth = await getAuthHeader();
     const { data } = await axios.get(`${BOOKS_URL}/contacts/${match.contact_id}`, {
       headers: { Authorization: auth },
       params:  { organization_id: ORG_ID },
       timeout: 15000,
     });
-    if (data.code !== 0) throw new Error(data.message);
+    if (data.code !== 0) throw new Error(`Zoho contact fetch failed: ${data.message}`);
+
     const dealer = data.contact;
     await setCache(`dealer_detail_${dealer.contact_id}`, dealer, TTL.dealer);
     return dealer;
