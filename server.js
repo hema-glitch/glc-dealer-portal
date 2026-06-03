@@ -118,74 +118,122 @@ app.get('/zoho/callback', async (req, res) => {
 
 
 // ── Login flow diagnostic (shows exactly where login fails) ────────────────
+// ── Login flow diagnostic (shows exactly where login fails) ────────────────
 app.get('/health/login', async (req, res) => {
   const email = req.query.email || 'benton@test.com';
   const steps = [];
-  
+
   try {
-    // Step 1: token
+    const axios = require('axios');
+
+    // Step 1: OAuth token
     steps.push({ step: 1, name: 'OAuth token' });
+
     const { getAccessToken } = require('./src/services/zohoAuth');
     const token = await getAccessToken();
-    steps[0].result = token ? 'OK: ' + token.slice(0,8) + '...' : 'FAIL: empty';
-// Step 1.5: organizations
-steps.push({ step: 1.5, name: 'GET /organizations' });
 
-const orgs = await axios.get(
-  'https://www.zohoapis.com/books/v3/organizations',
-  {
-    headers: {
-      Authorization: `Zoho-oauthtoken ${token}`,
-    },
-    timeout: 10000,
-  }
-);
+    steps[0].result = token
+      ? 'OK: ' + token.slice(0, 8) + '...'
+      : 'FAIL: empty';
 
-steps[1].result = 'OK';
-steps[1].organizations = orgs.data;
-    // Step 2: contacts search
+    // Step 1.5: Organizations
+    steps.push({ step: 1.5, name: 'GET /organizations' });
+
+    const orgs = await axios.get(
+      'https://www.zohoapis.com/books/v3/organizations',
+      {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${token}`,
+        },
+        timeout: 10000,
+      }
+    );
+
+    steps[1].result = 'OK';
+    steps[1].organizations = orgs.data;
+
+    // Step 2: Contacts search
     steps.push({ step: 2, name: 'GET /contacts search' });
-    const axios = require('axios');
-    const BOOKS_URL = process.env.ZOHO_BOOKS_URL || 'https://www.zohoapis.com/books/v3';
+
+    const BOOKS_URL =
+      process.env.ZOHO_BOOKS_URL ||
+      'https://www.zohoapis.com/books/v3';
+
     const ORG_ID = process.env.ZOHO_ORG_ID;
+
     const r2 = await axios.get(`${BOOKS_URL}/contacts`, {
-      headers: { Authorization: `Zoho-oauthtoken ${token}` },
-      params: { organization_id: ORG_ID, contact_type: 'customer', search_text: email, per_page: 5 },
+      headers: {
+        Authorization: `Zoho-oauthtoken ${token}`,
+      },
+      params: {
+        organization_id: ORG_ID,
+        contact_type: 'customer',
+        search_text: email,
+        per_page: 5,
+      },
       timeout: 10000,
     });
-    const contacts = r2.data?.contacts || [];
-    steps[1].zoho_code = r2.data?.code;
-    steps[1].zoho_message = r2.data?.message;
-    steps[1].contacts_found = contacts.length;
-    steps[1].match = contacts.find(c => c.email?.toLowerCase() === email.toLowerCase()) ? 'FOUND' : 'NOT FOUND';
-    steps[1].result = r2.data?.code === 0 ? 'OK' : 'ERROR code:' + r2.data?.code;
-    const match = contacts.find(c => c.email?.toLowerCase() === email.toLowerCase());
-    
-    if (match) {
-      // Step 3: contact detail
-      steps.push({ step: 3, name: `GET /contacts/${match.contact_id}` });
-      const r3 = await axios.get(`${BOOKS_URL}/contacts/${match.contact_id}`, {
-        headers: { Authorization: `Zoho-oauthtoken ${token}` },
-        params: { organization_id: ORG_ID },
-        timeout: 10000,
-      });
-      const contact = r3.data?.contact;
-      steps[2].zoho_code = r3.data?.code;
-      steps[2].contact_present = contact ? 'YES' : 'NULL';
-      steps[2].custom_fields = contact?.custom_fields || [];
-      steps[2].result = (r3.data?.code === 0 && contact) ? 'OK' : 'ERROR';
-    }
 
+    const contacts = r2.data?.contacts || [];
+
+    steps[2].zoho_code = r2.data?.code;
+    steps[2].zoho_message = r2.data?.message;
+    steps[2].contacts_found = contacts.length;
+    steps[2].match = contacts.find(
+      c => c.email?.toLowerCase() === email.toLowerCase()
+    )
+      ? 'FOUND'
+      : 'NOT FOUND';
+
+    steps[2].result =
+      r2.data?.code === 0
+        ? 'OK'
+        : 'ERROR code:' + r2.data?.code;
+
+    const match = contacts.find(
+      c => c.email?.toLowerCase() === email.toLowerCase()
+    );
+
+    // Step 3: Contact detail
+    if (match) {
+      steps.push({
+        step: 3,
+        name: `GET /contacts/${match.contact_id}`,
+      });
+
+      const r3 = await axios.get(
+        `${BOOKS_URL}/contacts/${match.contact_id}`,
+        {
+          headers: {
+            Authorization: `Zoho-oauthtoken ${token}`,
+          },
+          params: {
+            organization_id: ORG_ID,
+          },
+          timeout: 10000,
+        }
+      );
+
+      const contact = r3.data?.contact;
+
+      steps[3].zoho_code = r3.data?.code;
+      steps[3].contact_present = contact ? 'YES' : 'NULL';
+      steps[3].custom_fields = contact?.custom_fields || [];
+
+      steps[3].result =
+        r3.data?.code === 0 && contact
+          ? 'OK'
+          : 'ERROR';
+    }
   } catch (err) {
-   steps[steps.length - 1].error = err.message;steps[steps.length - 1].error = err.message;
-steps[steps.length - 1].status = err.response?.status;
-steps[steps.length - 1].zoho_response = err.response?.data;
-steps[steps.length - 1].result = 'EXCEPTION';
+    steps[steps.length - 1].error = err.message;
+    steps[steps.length - 1].status = err.response?.status || null;
+    steps[steps.length - 1].zoho_response = err.response?.data || null;
+    steps[steps.length - 1].result = 'EXCEPTION';
   }
-  
+
   res.json({ steps });
 });
-
 // ── Zoho organization diagnostic ───────────────────────────────
 app.get('/health/org', async (req, res) => {
   try {
