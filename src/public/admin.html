@@ -148,6 +148,7 @@
     <button class="nav-item" onclick="showSection('rebate',this)"><span class="icon">🏆</span> Rebate Tracker</button>
     <div class="nav-section">Reports</div>
     <button class="nav-item" onclick="showSection('allInvoices',this)"><span class="icon">📄</span> All Invoices</button>
+    <button class="nav-item" onclick="showSection('focConfig',this)"><span class="icon">🎁</span> FOC Config</button>
     <div class="nav-section">System</div>
     <button class="nav-item" onclick="window.location.href='/dashboard'"><span class="icon">↩</span> Dealer View</button>
   </nav>
@@ -366,6 +367,101 @@
             <tr><td colspan="8"><div class="empty-state"><div class="icon">📄</div><p>Click "Load All Invoices" to fetch from Zoho Books</p></div></td></tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- FOC CONFIG -->
+    <section class="section" id="section-focConfig">
+      <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:16px;margin-bottom:20px;font-size:13px;color:#92400e">
+        <strong>⚡ How to enable FOC:</strong> Find the product below → click "Enable FOC" → set Buy/Free slab → Save.
+        Changes take effect immediately. The Zoho Item ID is the internal ID used to match orders.
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🎁 FOC Scheme Configuration</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="focSearch" class="search-box" placeholder="Search products..." oninput="filterFOCProducts()" style="width:220px">
+            <button onclick="loadFOCConfig()" style="padding:8px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">↻ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Active FOC schemes -->
+        <div style="padding:16px 20px 8px">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:10px">Active FOC Schemes</div>
+          <div id="activeFOCList" style="display:flex;flex-wrap:wrap;gap:8px;min-height:40px">
+            <div style="font-size:13px;color:var(--text-muted)">Loading...</div>
+          </div>
+        </div>
+        <div style="height:1px;background:var(--border);margin:8px 0"></div>
+
+        <!-- Product list -->
+        <div style="padding:0 0 16px">
+          <table class="data-table" id="focProductTable">
+            <thead>
+              <tr>
+                <th>Product Name</th>
+                <th>SKU</th>
+                <th>Zoho Item ID</th>
+                <th>Stock</th>
+                <th>FOC Status</th>
+                <th>Slab (Buy / Free)</th>
+                <th>Eligible For</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="focProductTbody">
+              <tr><td colspan="8"><div class="empty-state"><div class="icon">⏳</div><p>Loading products...</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Edit modal -->
+      <div id="focModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center">
+        <div style="background:white;border-radius:14px;padding:28px;width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.2)">
+          <div style="font-family:'Montserrat',sans-serif;font-size:18px;font-weight:800;margin-bottom:4px">Configure FOC Scheme</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px" id="focModalProductName"></div>
+          <input type="hidden" id="focItemId">
+          <input type="hidden" id="focItemName">
+
+          <div style="margin-bottom:16px">
+            <label style="display:block;font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Buy Quantity (trigger)</label>
+            <input type="number" id="focSlabBuy" value="10" min="1"
+              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:16px;font-weight:700">
+          </div>
+
+          <div style="margin-bottom:16px">
+            <label style="display:block;font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Free Quantity (reward)</label>
+            <input type="number" id="focSlabFree" value="2" min="1"
+              style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:16px;font-weight:700">
+          </div>
+
+          <div style="margin-bottom:20px">
+            <label style="display:block;font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Eligible Dealer Categories</label>
+            <div style="display:flex;gap:12px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+                <input type="checkbox" id="focCatStandard" checked style="width:16px;height:16px"> Standard
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+                <input type="checkbox" id="focCatPremium" checked style="width:16px;height:16px"> Premium
+              </label>
+            </div>
+          </div>
+
+          <div style="background:#f0fdf4;border-radius:8px;padding:12px;margin-bottom:20px;font-size:13px;color:var(--green)">
+            <strong>Preview:</strong> <span id="focPreview">Buy 10, Get 2 Free</span>
+          </div>
+
+          <div style="display:flex;gap:10px">
+            <button onclick="saveFOCConfig()" style="flex:1;padding:12px;background:var(--red);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">
+              ✓ Save FOC Scheme
+            </button>
+            <button onclick="closeFOCModal()" style="padding:12px 18px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer">
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -730,6 +826,7 @@ const pageTitles = {
   overview: 'Admin Overview', dealers: 'All Dealers',
   cashDiscount: 'Cash Discount Tracker', rebate: 'Rebate Tracker',
   allInvoices: 'All Invoices',
+  focConfig: 'FOC Scheme Configuration',
 };
 
 function showSection(id, el) {
@@ -740,6 +837,7 @@ function showSection(id, el) {
   document.getElementById('pageTitle').textContent = pageTitles[id] || id;
   if (id === 'cashDiscount' && allDealers.length) loadCashDiscountReport();
   if (id === 'rebate' && allDealers.length) loadRebateReport();
+  if (id === 'focConfig') loadFOCConfig();
   if (id === 'dealers') {
     document.getElementById('dealerListView').style.display = 'block';
     document.getElementById('dealerDetailView').classList.remove('open');
@@ -772,6 +870,188 @@ async function logout() {
   await fetch('/api/auth/logout', { method: 'POST' });
   window.location.href = '/login';
 }
+
+// ══════════════════════════════════════════════════════
+// FOC CONFIG
+// ══════════════════════════════════════════════════════
+let focProducts = [];
+let focConfig   = {};
+
+async function loadFOCConfig() {
+  document.getElementById('focProductTbody').innerHTML =
+    '<tr><td colspan="8"><div class="empty-state"><div class="icon">⏳</div><p>Loading products...</p></div></td></tr>';
+
+  try {
+    const [prodRes, cfgRes] = await Promise.all([
+      fetch('/api/admin/products'),
+      fetch('/api/admin/foc-config'),
+    ]);
+    const prodData = await prodRes.json();
+    const cfgData  = await cfgRes.json();
+
+    if (prodData.success) focProducts = prodData.products;
+    if (cfgData.success)  focConfig   = cfgData.config;
+
+    renderFOCProducts(focProducts);
+    renderActiveFOC();
+  } catch (err) {
+    document.getElementById('focProductTbody').innerHTML =
+      `<tr><td colspan="8"><div class="empty-state"><p style="color:red">Error: ${err.message}</p></div></td></tr>`;
+  }
+}
+
+function renderActiveFOC() {
+  const list = document.getElementById('activeFOCList');
+  const active = Object.entries(focConfig);
+  if (!active.length) {
+    list.innerHTML = '<span style="font-size:13px;color:var(--text-muted)">No FOC schemes active. Enable one below.</span>';
+    return;
+  }
+  list.innerHTML = active.map(([id, cfg]) => `
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 14px;font-size:13px;display:flex;align-items:center;gap:10px">
+      <span style="font-weight:700;color:var(--green)">🎁 ${cfg.name}</span>
+      <span style="color:var(--text-muted)">Buy ${cfg.slabBuy} → Get ${cfg.slabFree} Free</span>
+      <span style="font-size:11px;color:#6b7280">${(cfg.categories||[]).join(', ')}</span>
+      <button onclick="removeFOC('${id}')" style="padding:2px 8px;background:#fee2e2;color:var(--red);border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:700">Remove</button>
+    </div>`).join('');
+}
+
+function renderFOCProducts(list) {
+  const tbody = document.getElementById('focProductTbody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>No products found</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(p => {
+    const hasFOC = focConfig[p.item_id];
+    return `
+      <tr>
+        <td><strong>${p.name}</strong><div style="font-size:11px;color:var(--text-muted)">${p.category}</div></td>
+        <td style="font-family:monospace;font-size:12px">${p.sku}</td>
+        <td>
+          <code style="background:#f1f5f9;padding:3px 8px;border-radius:4px;font-size:11px;user-select:all;cursor:pointer"
+                onclick="navigator.clipboard.writeText('${p.item_id}').then(()=>showToast('Item ID copied!'))"
+                title="Click to copy">
+            ${p.item_id}
+          </code>
+        </td>
+        <td>${p.stock > 0 ? `<span style="color:var(--green)">${p.stock}</span>` : '<span style="color:var(--red)">0</span>'}</td>
+        <td>${hasFOC
+          ? `<span class="badge badge-green">✓ Active — Buy ${hasFOC.slabBuy} Get ${hasFOC.slabFree}</span>`
+          : '<span class="badge badge-gray">Not configured</span>'
+        }</td>
+        <td style="font-size:13px">${hasFOC ? `${hasFOC.slabBuy} / ${hasFOC.slabFree}` : '—'}</td>
+        <td style="font-size:12px">${hasFOC ? (hasFOC.categories||[]).join(', ') : '—'}</td>
+        <td>
+          <button onclick="openFOCModal('${p.item_id}','${p.name.replace(/'/g,'\'')}')"
+            style="padding:5px 12px;background:${hasFOC?'var(--blue)':'var(--red)'};color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">
+            ${hasFOC ? '✏ Edit' : '+ Enable FOC'}
+          </button>
+          ${hasFOC ? `<button onclick="removeFOC('${p.item_id}')" style="padding:5px 10px;background:#fee2e2;color:var(--red);border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px">✕</button>` : ''}
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+function filterFOCProducts() {
+  const q = document.getElementById('focSearch').value.toLowerCase();
+  renderFOCProducts(focProducts.filter(p =>
+    p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+  ));
+}
+
+function openFOCModal(itemId, itemName) {
+  const existing = focConfig[itemId];
+  document.getElementById('focItemId').value   = itemId;
+  document.getElementById('focItemName').value = itemName;
+  document.getElementById('focModalProductName').textContent = itemName + ' · ' + itemId;
+  document.getElementById('focSlabBuy').value  = existing?.slabBuy  || 10;
+  document.getElementById('focSlabFree').value = existing?.slabFree || 2;
+  document.getElementById('focCatStandard').checked = existing ? (existing.categories||[]).includes('Standard') : true;
+  document.getElementById('focCatPremium').checked  = existing ? (existing.categories||[]).includes('Premium')  : true;
+  updateFOCPreview();
+  document.getElementById('focModal').style.display = 'flex';
+}
+
+function closeFOCModal() {
+  document.getElementById('focModal').style.display = 'none';
+}
+
+function updateFOCPreview() {
+  const buy  = parseInt(document.getElementById('focSlabBuy').value)  || 10;
+  const free = parseInt(document.getElementById('focSlabFree').value) || 2;
+  document.getElementById('focPreview').textContent =
+    `Buy ${buy} units → Get ${free} FREE. ` +
+    `Order of ${buy*2} units → ${free*2} free. Order of ${buy*3} → ${free*3} free.`;
+}
+
+document.addEventListener('change', e => {
+  if (['focSlabBuy','focSlabFree'].includes(e.target.id)) updateFOCPreview();
+});
+document.addEventListener('input', e => {
+  if (['focSlabBuy','focSlabFree'].includes(e.target.id)) updateFOCPreview();
+});
+
+async function saveFOCConfig() {
+  const itemId   = document.getElementById('focItemId').value;
+  const itemName = document.getElementById('focItemName').value;
+  const slabBuy  = parseInt(document.getElementById('focSlabBuy').value);
+  const slabFree = parseInt(document.getElementById('focSlabFree').value);
+  const cats     = [];
+  if (document.getElementById('focCatStandard').checked) cats.push('Standard');
+  if (document.getElementById('focCatPremium').checked)  cats.push('Premium');
+
+  if (!cats.length) { alert('Select at least one dealer category.'); return; }
+
+  try {
+    const res  = await fetch('/api/admin/foc-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: itemId, slabBuy, slabFree, name: itemName, categories: cats, active: true }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      focConfig = data.config;
+      renderFOCProducts(focProducts);
+      renderActiveFOC();
+      closeFOCModal();
+      showToast(`FOC enabled for ${itemName}!`);
+    } else {
+      alert('Error: ' + data.error);
+    }
+  } catch (err) {
+    alert('Save failed: ' + err.message);
+  }
+}
+
+async function removeFOC(itemId) {
+  if (!confirm('Remove FOC scheme for this product?')) return;
+  try {
+    const res  = await fetch('/api/admin/foc-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: itemId, active: false }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      focConfig = data.config;
+      renderFOCProducts(focProducts);
+      renderActiveFOC();
+      showToast('FOC scheme removed');
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1a1a1a;color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3)';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
 </script>
 </body>
 </html>

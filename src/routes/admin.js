@@ -114,3 +114,66 @@ router.get('/summary', async (req, res) => {
 });
 
 module.exports = router;
+
+// ─── GET /api/admin/products ─────────────────────────────────
+// Lists all products with their Zoho item_id exposed (needed for FOC config)
+router.get('/products', async (req, res) => {
+  try {
+    const { getAllProducts } = require('../services/zohoInventory');
+    const { getFOCConfig }   = require('../services/schemeEngine');
+    const items     = await getAllProducts();
+    const focConfig = getFOCConfig();
+
+    const products = items.map(item => ({
+      item_id:  item.item_id,
+      name:     item.name,
+      sku:      item.sku || '',
+      rate:     item.rate || 0,
+      stock:    item.available_stock || item.stock_on_hand || 0,
+      category: item.category_name || 'General',
+      foc:      focConfig[item.item_id] || null,
+    }));
+
+    res.json({ success: true, products });
+  } catch (err) {
+    console.error('[Admin] products error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/admin/foc-config ───────────────────────────────
+router.get('/foc-config', (req, res) => {
+  const { getFOCConfig } = require('../services/schemeEngine');
+  res.json({ success: true, config: getFOCConfig() });
+});
+
+// ─── POST /api/admin/foc-config ──────────────────────────────
+// Body: { item_id, slabBuy, slabFree, name, categories, active }
+// Send active:false to remove a product from FOC
+router.post('/foc-config', (req, res) => {
+  try {
+    const { getFOCConfig, saveFOCConfig } = require('../services/schemeEngine');
+    const { item_id, slabBuy, slabFree, name, categories, active } = req.body;
+
+    if (!item_id) return res.status(400).json({ error: 'item_id is required' });
+
+    const config = getFOCConfig();
+
+    if (active === false || active === 'false') {
+      delete config[item_id];
+    } else {
+      config[item_id] = {
+        slabBuy:    parseInt(slabBuy)  || 10,
+        slabFree:   parseInt(slabFree) || 2,
+        name:       name || item_id,
+        categories: categories || ['Standard', 'Premium'],
+      };
+    }
+
+    saveFOCConfig(config);
+    res.json({ success: true, config });
+  } catch (err) {
+    console.error('[Admin] foc-config save error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
