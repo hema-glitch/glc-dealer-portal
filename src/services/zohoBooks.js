@@ -1,13 +1,6 @@
 /**
  * zohoBooks.js  –  GLC Dealer Portal
  * CommonJS — matches server.js, auth.js, admin.js, orders.js, products.js
- *
- * Exports:
- *   getDealerByEmail, getAllDealers, getDealerById
- *   getInvoicesForCustomer, getInvoicesForDealer, getInvoiceById
- *   getPaymentsForDealer, getDealerOutstanding
- *   createSalesOrder, getSalesOrdersForDealer
- *   clearAllCache
  */
 
 const axios = require('axios');
@@ -18,32 +11,36 @@ const fs   = require('fs');
 const BOOKS_URL = process.env.ZOHO_BOOKS_URL || 'https://www.zohoapis.com/books/v3';
 const ORG_ID    = process.env.ZOHO_ORG_ID;
 
-// ─── File cache (persists to /tmp on Vercel) ─────────────────
+// ─── Simple /tmp cache (Vercel-safe) ─────────────────────────
 const CACHE_FILE = process.env.VERCEL
   ? '/tmp/.glc-cache.json'
   : path.join(__dirname, '../../.cache.json');
 
-function _readCache()        { try { return JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); } catch { return {}; } }
-function _writeCache(store)  { try { fs.writeFileSync(CACHE_FILE, JSON.stringify(store));    } catch {} }
-function _getCache(key)      { const e = _readCache()[key]; return (e && Date.now() < e.x) ? e.d : null; }
-function _setCache(key, d, ttl = 600000) { const s = _readCache(); s[key] = { d, x: Date.now() + ttl }; _writeCache(s); }
-function clearAllCache()     { try { fs.writeFileSync(CACHE_FILE, '{}'); } catch {} }
-
-// ─── Incremental sync watermarks (stored in cache file) ──────
-function _getWM(key)     { return _readCache()[`wm_${key}`]?.ts || null; }
-function _setWM(key, ts) { const s = _readCache(); s[`wm_${key}`] = { ts }; _writeCache(s); }
+function _readCache()       { try { return JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); } catch { return {}; } }
+function _writeCache(store) { try { fs.writeFileSync(CACHE_FILE, JSON.stringify(store));    } catch {} }
+function _getCache(key)     { const e = _readCache()[key]; return (e && Date.now() < e.x) ? e.d : null; }
+function _setCache(key, d, ttl = 300000) {
+  const s = _readCache(); s[key] = { d, x: Date.now() + ttl }; _writeCache(s);
+}
+function clearAllCache() { try { fs.writeFileSync(CACHE_FILE, '{}'); } catch {} }
 
 // ─── Generic paginated GET ────────────────────────────────────
 async function booksGet(endpoint, params = {}) {
   const auth = await getAuthHeader();
   let page = 1, hasMore = true, all = [];
+
   while (hasMore && page <= 10) {
     const { data } = await axios.get(`${BOOKS_URL}${endpoint}`, {
       headers: { Authorization: auth },
       params:  { organization_id: ORG_ID, per_page: 200, page, ...params },
       timeout: 25000,
     });
-    if (data.code !== 0) throw new Error(`Zoho [${endpoint}]: ${data.message}`);
+
+    // Zoho returns code:0 on success
+    if (data.code !== 0) {
+      throw new Error(`Zoho API error on ${endpoint}: [${data.code}] ${data.message}`);
+    }
+
     const key = Object.keys(data).find(k => Array.isArray(data[k]) && k !== 'page_context');
     if (key) all.push(...data[key]);
     hasMore = data.page_context?.has_more_page ?? false;
@@ -52,7 +49,7 @@ async function booksGet(endpoint, params = {}) {
   return all;
 }
 
-// ─── Invoice enrichment (due today + cash discount) ──────────
+// ─── Invoice enrichment ───────────────────────────────────────
 const DISC_DAYS = 15;
 const DISC_RATE = 0.03;
 
@@ -81,8 +78,8 @@ function enrichInvoice(inv) {
   }
 
   const STATUS_MAP = {
-    due_today:'Due Today', sent:'Sent', draft:'Draft', overdue:'Overdue',
-    paid:'Paid', unpaid:'Unpaid', partiallypaid:'Partially Paid', void:'Void',
+    due_today: 'Due Today', sent: 'Sent', draft: 'Draft', overdue: 'Overdue',
+    paid: 'Paid', unpaid: 'Unpaid', partiallypaid: 'Partially Paid', void: 'Void',
   };
   const rs = due_today && inv.status !== 'paid' ? 'due_today' : inv.status;
 
@@ -130,40 +127,39 @@ async function getDealerById(contactId) {
 }
 
 // ════════════════════════════════════════════════════
-// INVOICES
+// INVOICES — fetch all statuses including "Sent"
 // ════════════════════════════════════════════════════
 
-async function _fetchAllInvoicesFor(contactId) {
+async function _fetchAllInvoices(contactId) {
+  // Fetch Status.All first — covers Draft, Paid, Overdue, Unpaid, PartiallyPaid, Void
   const all  = await booksGet('/invoices', { customer_id: contactId, filter_by: 'Status.All' });
+  // Explicitly fetch Sent — Zoho sometimes excludes it from Status.All
   const sent = await booksGet('/invoices', { customer_id: contactId, filter_by: 'Status.Sent' });
   const seen = new Set(all.map(i => i.invoice_id));
-  for (const inv of sent) if (!seen.has(inv.invoice_id)) { all.push(inv); seen.add(inv.invoice_id); }
+  for (const inv of sent) {
+    if (!seen.has(inv.invoice_id)) { all.push(inv); seen.add(inv.invoice_id); }
+  }
   return all;
 }
 
-// For dealer dashboard — supports incremental sync
-async function getInvoicesForCustomer(contactId, opts = {}) {
-  const wmKey   = `${ORG_ID}_inv_${contactId}`;
-  const lastSync = opts.incrementalOnly ? _getWM(wmKey) : null;
-  let invoices;
-
-  if (lastSync) {
-    console.log(`[ZohoBooks] Incremental sync since ${lastSync}`);
-    invoices = await booksGet('/invoices', {
-      customer_id: contactId, filter_by: 'Status.All', last_modified_time: lastSync,
-    });
-  } else {
-    console.log(`[ZohoBooks] Full sync for ${contactId}`);
-    invoices = await _fetchAllInvoicesFor(contactId);
+// Dealer dashboard — cached 5 minutes
+async function getInvoicesForCustomer(contactId) {
+  const ck = `invoices_${contactId}`;
+  const c  = _getCache(ck);
+  if (c) {
+    console.log(`[ZohoBooks] Returning cached invoices for ${contactId}`);
+    return c; // already enriched
   }
-
-  _setWM(wmKey, new Date().toISOString().replace('Z', '+00:00'));
-  return invoices.map(enrichInvoice);
+  console.log(`[ZohoBooks] Fetching invoices for ${contactId}`);
+  const invoices = await _fetchAllInvoices(contactId);
+  const enriched = invoices.map(enrichInvoice);
+  _setCache(ck, enriched, 5 * 60000); // 5 min cache
+  return enriched;
 }
 
-// For admin views — always full fetch
+// Admin view — no cache
 async function getInvoicesForDealer(contactId) {
-  const invoices = await _fetchAllInvoicesFor(contactId);
+  const invoices = await _fetchAllInvoices(contactId);
   return invoices.map(enrichInvoice);
 }
 

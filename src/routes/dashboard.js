@@ -1,9 +1,9 @@
 /**
  * dashboard.js — Route: /api/dashboard
- * Auth is applied at server.js level — no middleware import needed here.
+ * Auth is applied at server.js level via authMiddleware.
  *
- * GET /api/dashboard            → invoices + stats (dashboard.html line 1003)
- * GET /api/dashboard/invoice/:id → single invoice for modal (dashboard.html line 1353)
+ * GET /api/dashboard            → invoices + stats  (dashboard.html line 1003)
+ * GET /api/dashboard/invoice/:id → single invoice   (dashboard.html line 1353)
  */
 
 const express = require('express');
@@ -17,12 +17,9 @@ const router = express.Router();
 // GET /api/dashboard
 router.get('/', async (req, res) => {
   try {
-    const contactId    = req.dealer.contactId;
-    const forceRefresh = req.query.refresh === 'true';
+    const contactId = req.dealer.contactId;
 
-    const invoices = await getInvoicesForCustomer(contactId, {
-      incrementalOnly: !forceRefresh,
-    });
+    const invoices = await getInvoicesForCustomer(contactId);
 
     const stats = invoices.reduce(
       (acc, inv) => {
