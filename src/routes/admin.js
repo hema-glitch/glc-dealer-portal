@@ -118,11 +118,13 @@ module.exports = router;
 router.get('/products', async (req, res) => {
   try {
     const { getAllProductsWithFOC } = require('../services/zohoInventory');
+    console.log('[Admin] Loading products from Zoho Books...');
     const items = await getAllProductsWithFOC();
-    res.json({ success: true, products: items });
+    console.log(`[Admin] Successfully loaded ${items.length} products`);
+    res.json({ success: true, products: items, count: items.length });
   } catch (err) {
-    console.error('[Admin] products error:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('[Admin] products error:', err.message, err.stack);
+    res.status(500).json({ error: err.message, details: err });
   }
 });
 

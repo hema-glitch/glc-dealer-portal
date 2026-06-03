@@ -81,14 +81,24 @@ async function getAllProducts() {
   return remember('products_raw', PRODUCT_TTL, async () => {
     const auth = await getAuthHeader();
     try {
+      console.log('[ZohoInventory] Fetching items from Zoho Books...');
       const response = await axios.get(`${BASE_URL}/items`, {
         headers: { Authorization: auth },
         params:  { organization_id: ORG_ID, status: 'active' },
         timeout: 15000,
       });
-      return response.data?.items || [];
+      const items = response.data?.items || [];
+      console.log(`[ZohoInventory] Successfully fetched ${items.length} items`);
+      console.log("ZOHO ORG:", organizationId);
+console.log("ITEM COUNT:", response.data.items?.length);
+console.log("ZOHO RESPONSE:", JSON.stringify(response.data).substring(0,1000));
+      return items;
     } catch (err) {
-      console.error('[ZohoInventory] getAllProducts error:', err.response?.data || err.message);
+      console.error('[ZohoInventory] getAllProducts error:', {
+        status: err.response?.status,
+        message: err.message,
+        data: err.response?.data,
+      });
       return [];
     }
   });
@@ -98,7 +108,8 @@ async function getAllProducts() {
 async function getAllProductsWithFOC() {
   return remember('products_with_foc', PRODUCT_TTL, async () => {
     const items = await getAllProducts();
-    return items.map(item => ({
+    console.log(`[ZohoInventory] Parsing FOC data for ${items.length} items...`);
+    const result = items.map(item => ({
       item_id:        item.item_id,
       name:           item.name,
       sku:            item.sku            || '',
@@ -111,6 +122,8 @@ async function getAllProductsWithFOC() {
       custom_fields:  item.custom_fields  || [],
       foc:            parseFOC(item),
     }));
+    console.log(`[ZohoInventory] Returning ${result.length} products with FOC data`);
+    return result;
   });
 }
 
