@@ -41,38 +41,68 @@ function getCF(customFields, apiName, label) {
 
 // ─── Parse FOC custom fields from a Zoho item ─────────────────────────────────
 function parseFOC(item) {
-  const cf = item.custom_fields || [];
+  // First try direct fields from item list API
+  let active = item.cf_foc_active;
+  let buyQty = item.cf_foc_buy_qty;
+  let freeQty = item.cf_foc_free_qty;
+  let catRaw = item.cf_foc_category;
 
-  // Support both custom field names (admin may name them differently)
-  const active  = getCF(cf, 'cf_foc_active',   'FOC Active')   ||
-                  getCF(cf, 'cf_foc_enabled',   'FOC Enabled');
-  const buyQty  = getCF(cf, 'cf_foc_buy_qty',  'FOC Buy Qty')  ||
-                  getCF(cf, 'cf_foc_buy',       'FOC Buy');
-  const freeQty = getCF(cf, 'cf_foc_free_qty', 'FOC Free Qty') ||
-                  getCF(cf, 'cf_foc_free',      'FOC Free');
-  const catRaw  = getCF(cf, 'cf_foc_category', 'FOC Category') || 'All';
+  // Fallback to custom_fields array
+  if (
+    active === undefined &&
+    buyQty === undefined &&
+    freeQty === undefined
+  ) {
+    const cf = item.custom_fields || [];
 
-  const isActive = active === true || active === 'true' || active === '1' || active === 'Yes';
-  const slabBuy  = parseInt(buyQty)  || 0;
-  const slabFree = parseInt(freeQty) || 0;
+    active =
+      getCF(cf, 'cf_foc_active', 'FOC Active') ||
+      getCF(cf, 'cf_foc_enabled', 'FOC Enabled');
+
+    buyQty =
+      getCF(cf, 'cf_foc_buy_qty', 'FOC Buy Qty') ||
+      getCF(cf, 'cf_foc_buy', 'FOC Buy');
+
+    freeQty =
+      getCF(cf, 'cf_foc_free_qty', 'FOC Free Qty') ||
+      getCF(cf, 'cf_foc_free', 'FOC Free');
+
+    catRaw =
+      getCF(cf, 'cf_foc_category', 'FOC Category') ||
+      'All';
+  }
+
+  const isActive =
+    active === true ||
+    active === 'true' ||
+    active === 'True' ||
+    active === '1' ||
+    active === 1;
+
+  const slabBuy = parseInt(buyQty || 0, 10);
+  const slabFree = parseInt(freeQty || 0, 10);
 
   if (!isActive || slabBuy <= 0 || slabFree <= 0) {
     return { active: false };
   }
 
-  // Parse categories
-  const catStr = String(catRaw).toLowerCase();
-  let categories = ['Standard', 'Premium']; // default: all
+  const catStr = String(catRaw || 'All').toLowerCase();
+
+  let categories = ['Standard', 'Premium'];
+
   if (catStr === 'standard') categories = ['Standard'];
-  if (catStr === 'premium')  categories = ['Premium'];
+  if (catStr === 'premium') categories = ['Premium'];
 
   return {
-    active:     true,
+    active: true,
     slabBuy,
     slabFree,
     categories,
-    label:      `Buy ${slabBuy} Get ${slabFree} Free`,
-    categoryLabel: catStr === 'all' || !catStr ? 'All Dealers' : catRaw,
+    label: `Buy ${slabBuy} Get ${slabFree} Free`,
+    categoryLabel:
+      catStr === 'all'
+        ? 'All Dealers'
+        : catRaw
   };
 }
 
