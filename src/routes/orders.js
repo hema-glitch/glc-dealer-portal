@@ -6,9 +6,44 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/authMiddleware');
 const { createSalesOrder, getSalesOrdersForDealer } = require('../services/zohoBooks');
-const { calculateCartFOC } = require('../services/schemeEngine');
+const { getAllProductsWithFOC } = require('../services/zohoInventory');
 
 const router = express.Router();
+
+function calculateFOCFromProducts(items, products, category = 'Standard') {
+  const productById = new Map(products.map(product => [String(product.item_id), product]));
+
+  return items.map((item) => {
+    const product = productById.get(String(item.itemId));
+    const quantity = Number(item.quantity) || 0;
+    const rate = Number(item.rate ?? product?.rate ?? 0);
+    const foc = product?.foc;
+
+    let freeQty = 0;
+    let scheme = null;
+    const dealerCategory = String(category || 'Standard').toLowerCase();
+    const focCategories = (foc?.categories || []).map(c => String(c).toLowerCase());
+
+    if (
+      foc?.active &&
+      foc.slabBuy > 0 &&
+      foc.slabFree > 0 &&
+      (!focCategories.length || focCategories.includes(dealerCategory))
+    ) {
+      freeQty = Math.floor(quantity / foc.slabBuy) * foc.slabFree;
+      if (freeQty > 0) scheme = foc.label || `Buy ${foc.slabBuy} Get ${foc.slabFree} Free`;
+    }
+
+    return {
+      ...item,
+      name: item.name || product?.name || '',
+      quantity,
+      rate,
+      freeQty,
+      scheme,
+    };
+  });
+}
 
 /**
  * GET /api/orders
@@ -42,15 +77,15 @@ router.get('/', authMiddleware, async (req, res) => {
  */
 router.post('/', authMiddleware, async (req, res) => {
   const { items, notes } = req.body;
-  const { contactId } = req.dealer;
+  const { contactId, category } = req.dealer;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Order must contain at least one item' });
   }
 
   try {
-    // Apply FOC logic to the cart
-    const cartWithFOC = calculateCartFOC(items);
+    const products = await getAllProductsWithFOC();
+    const cartWithFOC = calculateFOCFromProducts(items, products, category || 'Standard');
 
     // Build line items for Zoho Books
     const lineItems = cartWithFOC.map((item) => ({

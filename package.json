@@ -9,6 +9,7 @@
     "vercel-build": "echo 'No build step needed'"
   },
   "dependencies": {
+    "@upstash/redis": "^1.38.0",
     "axios": "^1.6.7",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",

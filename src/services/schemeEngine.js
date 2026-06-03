@@ -137,13 +137,23 @@ function checkCashDiscount(invoice, payment, category = 'Standard') {
   };
 }
 
-function processCashDiscounts(invoices, payments, category = 'Standard') {
+function paymentFromInvoice(inv) {
+  const isPaid = inv.status === 'paid' && Number(inv.balance || 0) === 0;
+  if (!isPaid || !inv.last_payment_date) return null;
+  return {
+    invoice_id: inv.invoice_id,
+    date: inv.last_payment_date,
+    amount: inv.total,
+  };
+}
+
+function processCashDiscounts(invoices, payments = [], category = 'Standard') {
   const paymentMap = {};
   payments.forEach(p => { if (p.invoice_id) paymentMap[p.invoice_id] = p; });
 
   const eligible = [], notEligible = [];
   invoices.forEach(inv => {
-    const payment = paymentMap[inv.invoice_id];
+    const payment = paymentMap[inv.invoice_id] || paymentFromInvoice(inv);
     if (!payment) return;
     const result = checkCashDiscount(inv, payment, category);
     if (result.eligible) eligible.push({ ...result, invoiceTotal: inv.total });

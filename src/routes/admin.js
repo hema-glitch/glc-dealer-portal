@@ -6,8 +6,7 @@
 const express = require('express');
 const {
   getAllDealers, getDealerById,
-  getInvoicesForDealer, getPaymentsForDealer,
-  getDealerOutstanding,
+  getInvoicesForDealer,
 } = require('../services/zohoBooks');
 const { processCashDiscounts, calculateRebate, getRules } = require('../services/schemeEngine');
 
@@ -40,17 +39,16 @@ router.get('/dealers', async (req, res) => {
 router.get('/dealer/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const [dealer, invoices, payments, outstandingAmt] = await Promise.all([
+    const [dealer, invoices] = await Promise.all([
       getDealerById(id),
       getInvoicesForDealer(id),
-      getPaymentsForDealer(id).catch(() => []),
-      getDealerOutstanding(id).catch(() => 0),
     ]);
 
     const category    = dealer?.custom_fields?.find(f => f.label === 'Dealer Category')?.value || 'Standard';
-    const cashDiscount = processCashDiscounts(invoices, payments, category);
+    const cashDiscount = processCashDiscounts(invoices, [], category);
     const rebate       = calculateRebate(invoices, category);
     const rules        = getRules(category);
+    const outstandingAmt = dealer?.outstanding_receivable_amount || 0;
 
     res.json({
       success: true,

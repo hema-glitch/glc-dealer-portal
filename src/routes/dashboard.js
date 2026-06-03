@@ -8,7 +8,6 @@ const express = require('express');
 const {
   getInvoicesForCustomer,
   getInvoiceById,
-  getPaymentsForDealer,
   getDealerOutstanding,
 } = require('../services/zohoBooks');
 const {
@@ -25,15 +24,14 @@ router.get('/', async (req, res) => {
     const { contactId, name, category, email } = req.dealer;
     const dealerCategory = category || 'Standard';
 
-    // Fetch invoices + payments + outstanding in parallel
-    const [invoices, payments, outstanding] = await Promise.all([
+    // Fetch invoices + outstanding in parallel. Cash discount uses invoice payment metadata.
+    const [invoices, outstanding] = await Promise.all([
       getInvoicesForCustomer(contactId),
-      getPaymentsForDealer(contactId).catch(() => []),
       getDealerOutstanding(contactId).catch(() => 0),
     ]);
 
     // Scheme calculations
-    const cashDiscount = processCashDiscounts(invoices, payments, dealerCategory);
+    const cashDiscount = processCashDiscounts(invoices, [], dealerCategory);
     const rebate       = calculateRebate(invoices, dealerCategory);
     const rules        = getRules(dealerCategory);
 

@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('dotenv').config({ path: '.env.local', override: true });
 const express      = require('express');
 const cookieParser = require('cookie-parser');
 const cors         = require('cors');
@@ -30,6 +31,7 @@ app.get('/admin', authMiddleware, adminMiddleware, (req, res) =>
 
 // ── API routes (auth applied HERE at router level) ────────
 app.use('/api/auth',                    require('./src/routes/auth'));
+app.use('/api/zoho',                    require('./src/routes/zohoWebhook'));
 app.use('/api/admin',    authMiddleware, adminMiddleware, require('./src/routes/admin'));
 app.use('/api/dashboard',authMiddleware, require('./src/routes/dashboard'));
 app.use('/api/products', authMiddleware, require('./src/routes/products'));
@@ -46,26 +48,22 @@ app.get('/health', (req, res) => res.json({
 // ── Cache management ──────────────────────────────────────
 app.get('/cache/clear',  doClearCache);
 app.post('/cache/clear', doClearCache);
-function doClearCache(req, res) {
-  const { clearAllCache } = require('./src/services/zohoBooks');
-  clearAllCache();
-  res.json({ success: true, message: 'Cache cleared' });
+async function doClearCache(req, res, next) {
+  try {
+    const { clearAllCache } = require('./src/services/zohoBooks');
+    await clearAllCache();
+    res.json({ success: true, message: 'Cache cleared' });
+  } catch (err) {
+    next(err);
+  }
 }
 
-app.get('/cache/status', (req, res) => {
-  const fs   = require('fs');
-  const file = process.env.VERCEL ? '/tmp/.glc-cache.json' : path.join(__dirname, '.cache.json');
+app.get('/cache/status', async (req, res) => {
   try {
-    const store   = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const now     = Date.now();
-    const entries = Object.entries(store).map(([key, entry]) => ({
-      key,
-      expiresIn: Math.round(((entry.x || 0) - now) / 1000) + 's',
-      expired:   now > (entry.x || 0),
-    }));
-    res.json({ cacheEntries: entries.length, entries });
-  } catch {
-    res.json({ cacheEntries: 0, note: 'No cache yet' });
+    const { getCacheStatus } = require('./src/services/cacheStore');
+    res.json(await getCacheStatus());
+  } catch (err) {
+    res.json({ cacheEntries: 0, error: err.message });
   }
 });
 

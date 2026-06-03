@@ -14,10 +14,18 @@
 
 const axios = require('axios');
 const { getAuthHeader } = require('./zohoAuth');
+const { remember, deleteCache } = require('./cacheStore');
 
 const BASE_URL = process.env.ZOHO_INVENTORY_URL || process.env.ZOHO_BOOKS_URL || 'https://www.zohoapis.com/books/v3';
 const BOOKS_URL = process.env.ZOHO_BOOKS_URL || 'https://www.zohoapis.com/books/v3';
 const ORG_ID = process.env.ZOHO_ORG_ID;
+
+function envMs(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+const PRODUCT_TTL = envMs('CACHE_TTL_PRODUCTS_MS', 6 * 60 * 60 * 1000);
 
 // ─── Helper: extract custom field value ───────────────────────────────────────
 function getCF(customFields, apiName, label) {
@@ -70,36 +78,40 @@ function parseFOC(item) {
 
 // ─── GET all products ─────────────────────────────────────────────────────────
 async function getAllProducts() {
-  const auth = await getAuthHeader();
-  try {
-    const response = await axios.get(`${BASE_URL}/items`, {
-      headers: { Authorization: auth },
-      params:  { organization_id: ORG_ID, status: 'active' },
-      timeout: 15000,
-    });
-    return response.data?.items || [];
-  } catch (err) {
-    console.error('[ZohoInventory] getAllProducts error:', err.response?.data || err.message);
-    return [];
-  }
+  return remember('products_raw', PRODUCT_TTL, async () => {
+    const auth = await getAuthHeader();
+    try {
+      const response = await axios.get(`${BASE_URL}/items`, {
+        headers: { Authorization: auth },
+        params:  { organization_id: ORG_ID, status: 'active' },
+        timeout: 15000,
+      });
+      return response.data?.items || [];
+    } catch (err) {
+      console.error('[ZohoInventory] getAllProducts error:', err.response?.data || err.message);
+      return [];
+    }
+  });
 }
 
 // ─── GET all products with FOC parsed ────────────────────────────────────────
 async function getAllProductsWithFOC() {
-  const items = await getAllProducts();
-  return items.map(item => ({
-    item_id:        item.item_id,
-    name:           item.name,
-    sku:            item.sku            || '',
-    rate:           item.rate           || 0,
-    currency:       item.currency_code  || 'AED',
-    unit:           item.unit           || 'pcs',
-    stock:          item.available_stock || item.stock_on_hand || 0,
-    inStock:        (item.available_stock || item.stock_on_hand || 0) > 0,
-    category:       item.category_name  || 'General',
-    custom_fields:  item.custom_fields  || [],
-    foc:            parseFOC(item),
-  }));
+  return remember('products_with_foc', PRODUCT_TTL, async () => {
+    const items = await getAllProducts();
+    return items.map(item => ({
+      item_id:        item.item_id,
+      name:           item.name,
+      sku:            item.sku            || '',
+      rate:           item.rate           || 0,
+      currency:       item.currency_code  || 'AED',
+      unit:           item.unit           || 'pcs',
+      stock:          item.available_stock || item.stock_on_hand || 0,
+      inStock:        (item.available_stock || item.stock_on_hand || 0) > 0,
+      category:       item.category_name  || 'General',
+      custom_fields:  item.custom_fields  || [],
+      foc:            parseFOC(item),
+    }));
+  });
 }
 
 // ─── UPDATE item FOC custom fields in Zoho Books ─────────────────────────────
@@ -130,22 +142,33 @@ async function updateItemFOC(itemId, { active, slabBuy, slabFree, category }) {
   if (response.data?.code !== 0) {
     throw new Error(`Zoho error: ${response.data?.message}`);
   }
+  await invalidateProductCache(itemId);
   return response.data?.item;
 }
 
 // ─── GET single product ───────────────────────────────────────────────────────
 async function getProductById(itemId) {
-  const auth = await getAuthHeader();
-  try {
-    const { data } = await axios.get(`${BASE_URL}/items/${itemId}`, {
-      headers: { Authorization: auth },
-      params:  { organization_id: ORG_ID },
-      timeout: 10000,
-    });
-    return data?.item || null;
-  } catch (err) {
-    return null;
-  }
+  return remember(`product_${itemId}`, PRODUCT_TTL, async () => {
+    const auth = await getAuthHeader();
+    try {
+      const { data } = await axios.get(`${BASE_URL}/items/${itemId}`, {
+        headers: { Authorization: auth },
+        params:  { organization_id: ORG_ID },
+        timeout: 10000,
+      });
+      return data?.item || null;
+    } catch (err) {
+      return null;
+    }
+  });
+}
+
+async function invalidateProductCache(itemId) {
+  await Promise.all([
+    deleteCache('products_raw'),
+    deleteCache('products_with_foc'),
+    itemId ? deleteCache(`product_${itemId}`) : Promise.resolve(),
+  ]);
 }
 
 module.exports = {
@@ -153,5 +176,6 @@ module.exports = {
   getAllProductsWithFOC,
   updateItemFOC,
   getProductById,
+  invalidateProductCache,
   parseFOC,
 };

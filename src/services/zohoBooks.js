@@ -5,24 +5,28 @@
 
 const axios = require('axios');
 const { getAuthHeader } = require('./zohoAuth');
-const path = require('path');
-const fs   = require('fs');
+const {
+  remember,
+  setCache,
+  deleteCache,
+  deletePrefix,
+  clearAllCache: clearCacheStore,
+} = require('./cacheStore');
 
 const BOOKS_URL = process.env.ZOHO_BOOKS_URL || 'https://www.zohoapis.com/books/v3';
 const ORG_ID    = process.env.ZOHO_ORG_ID;
 
-// ─── Simple /tmp cache (Vercel-safe) ─────────────────────────
-const CACHE_FILE = process.env.VERCEL
-  ? '/tmp/.glc-cache.json'
-  : path.join(__dirname, '../../.cache.json');
-
-function _readCache()       { try { return JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); } catch { return {}; } }
-function _writeCache(store) { try { fs.writeFileSync(CACHE_FILE, JSON.stringify(store));    } catch {} }
-function _getCache(key)     { const e = _readCache()[key]; return (e && Date.now() < e.x) ? e.d : null; }
-function _setCache(key, d, ttl = 300000) {
-  const s = _readCache(); s[key] = { d, x: Date.now() + ttl }; _writeCache(s);
+function envMs(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
-function clearAllCache() { try { fs.writeFileSync(CACHE_FILE, '{}'); } catch {} }
+
+const TTL = {
+  dealer:    envMs('CACHE_TTL_DEALER_MS',    6 * 60 * 60 * 1000),
+  dealers:   envMs('CACHE_TTL_DEALERS_MS',   6 * 60 * 60 * 1000),
+  financial: envMs('CACHE_TTL_FINANCIAL_MS', 6 * 60 * 60 * 1000),
+  orders:    envMs('CACHE_TTL_ORDERS_MS',   30 * 60 * 1000),
+};
 
 // ─── Generic paginated GET ────────────────────────────────────
 async function booksGet(endpoint, params = {}) {
@@ -98,32 +102,40 @@ function enrichInvoice(inv) {
 // ════════════════════════════════════════════════════
 
 async function getDealerByEmail(email) {
-  const ck = `dealer_${email}`;
-  const c  = _getCache(ck);
-  if (c) return c;
-  const list = await booksGet('/contacts', { contact_type: 'customer', search_text: email });
-  const d = list.find(c => c.email?.toLowerCase() === email.toLowerCase()) || null;
-  if (d) _setCache(ck, d, 30 * 60000);
-  return d;
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return null;
+
+  return remember(`dealer_email_${normalized}`, TTL.dealer, async () => {
+    const list = await booksGet('/contacts', { contact_type: 'customer', search_text: normalized });
+    const dealer = list.find(c => c.email?.toLowerCase() === normalized) || null;
+    if (dealer?.contact_id) {
+      await setCache(`dealer_detail_${dealer.contact_id}`, dealer, TTL.dealer);
+    }
+    return dealer;
+  });
 }
 
 async function getAllDealers() {
-  const c = _getCache('all_dealers');
-  if (c) return c;
-  const dealers = await booksGet('/contacts', { contact_type: 'customer' });
-  _setCache('all_dealers', dealers, 15 * 60000);
-  return dealers;
+  return remember('all_dealers', TTL.dealers, async () => {
+    const dealers = await booksGet('/contacts', { contact_type: 'customer' });
+    await Promise.all(dealers
+      .filter(d => d.contact_id)
+      .map(d => setCache(`dealer_detail_${d.contact_id}`, d, TTL.dealer)));
+    return dealers;
+  });
 }
 
 async function getDealerById(contactId) {
-  const auth = await getAuthHeader();
-  const { data } = await axios.get(`${BOOKS_URL}/contacts/${contactId}`, {
-    headers: { Authorization: auth },
-    params:  { organization_id: ORG_ID },
-    timeout: 15000,
+  return remember(`dealer_detail_${contactId}`, TTL.dealer, async () => {
+    const auth = await getAuthHeader();
+    const { data } = await axios.get(`${BOOKS_URL}/contacts/${contactId}`, {
+      headers: { Authorization: auth },
+      params:  { organization_id: ORG_ID },
+      timeout: 15000,
+    });
+    if (data.code !== 0) throw new Error(data.message);
+    return data.contact;
   });
-  if (data.code !== 0) throw new Error(data.message);
-  return data.contact;
 }
 
 // ════════════════════════════════════════════════════
@@ -142,36 +154,33 @@ async function _fetchAllInvoices(contactId) {
   return all;
 }
 
-// Dealer dashboard — cached 5 minutes
-async function getInvoicesForCustomer(contactId) {
-  const ck = `invoices_${contactId}`;
-  const c  = _getCache(ck);
-  if (c) {
-    console.log(`[ZohoBooks] Returning cached invoices for ${contactId}`);
-    return c; // already enriched
-  }
-  console.log(`[ZohoBooks] Fetching invoices for ${contactId}`);
-  const invoices = await _fetchAllInvoices(contactId);
-  const enriched = invoices.map(enrichInvoice);
-  _setCache(ck, enriched, 5 * 60000); // 5 min cache
-  return enriched;
+async function getInvoicesCached(contactId) {
+  return remember(`invoices_${contactId}`, TTL.financial, async () => {
+    console.log(`[ZohoBooks] Fetching invoices for ${contactId}`);
+    const invoices = await _fetchAllInvoices(contactId);
+    return invoices.map(enrichInvoice);
+  });
 }
 
-// Admin view — no cache
+async function getInvoicesForCustomer(contactId) {
+  return getInvoicesCached(contactId);
+}
+
 async function getInvoicesForDealer(contactId) {
-  const invoices = await _fetchAllInvoices(contactId);
-  return invoices.map(enrichInvoice);
+  return getInvoicesCached(contactId);
 }
 
 async function getInvoiceById(invoiceId) {
-  const auth = await getAuthHeader();
-  const { data } = await axios.get(`${BOOKS_URL}/invoices/${invoiceId}`, {
-    headers: { Authorization: auth },
-    params:  { organization_id: ORG_ID },
-    timeout: 15000,
+  return remember(`invoice_${invoiceId}`, TTL.financial, async () => {
+    const auth = await getAuthHeader();
+    const { data } = await axios.get(`${BOOKS_URL}/invoices/${invoiceId}`, {
+      headers: { Authorization: auth },
+      params:  { organization_id: ORG_ID },
+      timeout: 15000,
+    });
+    if (data.code !== 0) throw new Error(data.message);
+    return enrichInvoice(data.invoice);
   });
-  if (data.code !== 0) throw new Error(data.message);
-  return enrichInvoice(data.invoice);
 }
 
 // ════════════════════════════════════════════════════
@@ -179,7 +188,9 @@ async function getInvoiceById(invoiceId) {
 // ════════════════════════════════════════════════════
 
 async function getPaymentsForDealer(contactId) {
-  return booksGet('/customerpayments', { customer_id: contactId });
+  return remember(`payments_${contactId}`, TTL.financial, async () =>
+    booksGet('/customerpayments', { customer_id: contactId })
+  );
 }
 
 async function getDealerOutstanding(contactId) {
@@ -211,16 +222,49 @@ async function createSalesOrder({ contactId, lineItems, notes }) {
     timeout: 20000,
   });
   if (data.code !== 0) throw new Error(data.message);
+
+  const productKeys = lineItems
+    .map(li => li.itemId)
+    .filter(Boolean)
+    .map(itemId => deleteCache(`product_${itemId}`));
+  await Promise.all([
+    deleteCache(`orders_${contactId}`),
+    deleteCache(`dealer_report_${contactId}`),
+    deleteCache('products_raw'),
+    deleteCache('products_with_foc'),
+    ...productKeys,
+  ]).catch(err => console.warn('[ZohoBooks] cache invalidation failed:', err.message));
+
   return data.salesorder;
 }
 
 async function getSalesOrdersForDealer(contactId) {
-  const ck = `orders_${contactId}`;
-  const c  = _getCache(ck);
-  if (c) return c;
-  const orders = await booksGet('/salesorders', { customer_id: contactId });
-  _setCache(ck, orders, 5 * 60000);
-  return orders;
+  return remember(`orders_${contactId}`, TTL.orders, async () =>
+    booksGet('/salesorders', { customer_id: contactId })
+  );
+}
+
+async function invalidateDealerData(contactId) {
+  if (!contactId) return;
+  await Promise.all([
+    deleteCache(`dealer_detail_${contactId}`),
+    deleteCache(`invoices_${contactId}`),
+    deleteCache(`payments_${contactId}`),
+    deleteCache(`orders_${contactId}`),
+    deleteCache(`dealer_report_${contactId}`),
+  ]);
+}
+
+async function invalidateContactData(contactId) {
+  await Promise.all([
+    deleteCache('all_dealers'),
+    deletePrefix('dealer_email_'),
+    contactId ? deleteCache(`dealer_detail_${contactId}`) : Promise.resolve(),
+  ]);
+}
+
+async function clearAllCache() {
+  await clearCacheStore();
 }
 
 // ════════════════════════════════════════════════════
@@ -237,5 +281,7 @@ module.exports = {
   getDealerOutstanding,
   createSalesOrder,
   getSalesOrdersForDealer,
+  invalidateDealerData,
+  invalidateContactData,
   clearAllCache,
 };
