@@ -128,7 +128,21 @@ app.get('/health/login', async (req, res) => {
     const { getAccessToken } = require('./src/services/zohoAuth');
     const token = await getAccessToken();
     steps[0].result = token ? 'OK: ' + token.slice(0,8) + '...' : 'FAIL: empty';
+// Step 1.5: organizations
+steps.push({ step: 1.5, name: 'GET /organizations' });
 
+const orgs = await axios.get(
+  'https://www.zohoapis.com/books/v3/organizations',
+  {
+    headers: {
+      Authorization: `Zoho-oauthtoken ${token}`,
+    },
+    timeout: 10000,
+  }
+);
+
+steps[1].result = 'OK';
+steps[1].organizations = orgs.data;
     // Step 2: contacts search
     steps.push({ step: 2, name: 'GET /contacts search' });
     const axios = require('axios');
@@ -163,8 +177,10 @@ app.get('/health/login', async (req, res) => {
     }
 
   } catch (err) {
-    steps[steps.length - 1].error = err.message;
-    steps[steps.length - 1].result = 'EXCEPTION';
+   steps[steps.length - 1].error = err.message;steps[steps.length - 1].error = err.message;
+steps[steps.length - 1].status = err.response?.status;
+steps[steps.length - 1].zoho_response = err.response?.data;
+steps[steps.length - 1].result = 'EXCEPTION';
   }
   
   res.json({ steps });
