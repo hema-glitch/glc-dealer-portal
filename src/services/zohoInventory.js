@@ -89,9 +89,8 @@ async function getAllProducts() {
       });
       const items = response.data?.items || [];
       console.log(`[ZohoInventory] Successfully fetched ${items.length} items`);
-      console.log("ZOHO ORG:", organizationId);
-console.log("ITEM COUNT:", response.data.items?.length);
-console.log("ZOHO RESPONSE:", JSON.stringify(response.data).substring(0,1000));
+      // Fixed the variable name to ORG_ID (or you can just delete these debug lines entirely)
+      console.log("ZOHO ORG:", ORG_ID); 
       return items;
     } catch (err) {
       console.error('[ZohoInventory] getAllProducts error:', {
