@@ -72,7 +72,26 @@ app.get('/health/auth', async (req, res) => {
   res.json(result);
 });
 
+// ── Access token debug ──────────────────────────────────────
+app.get('/health/token', async (req, res) => {
+  try {
+    const { getAccessToken } = require('./src/services/zohoAuth');
 
+    const token = await getAccessToken();
+
+    res.json({
+      success: true,
+      token
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      status: err.response?.status,
+      details: err.response?.data
+    });
+  }
+});
 
 // ── Cache management ──────────────────────────────────────
 app.get('/cache/clear',  doClearCache);
